@@ -456,6 +456,9 @@ export class Wallet {
   public readonly baseCoin: BaseCoin;
   private _wallet: WalletData;
   private readonly _permissions?: string[];
+  private readonly ENABLE_TOKEN = 'enabletoken';
+  private readonly DISABLE_TOKEN = 'disabletoken';
+  private typeKeys: Array<string>;
 
   constructor(bitgo: BitGo, baseCoin: BaseCoin, walletData: any) {
     this.bitgo = bitgo;
@@ -466,6 +469,7 @@ export class Wallet {
       const userDetails = _.find(walletData.users, { user: userId });
       this._permissions = _.get(userDetails, 'permissions');
     }
+    this.typeKeys = [this.ENABLE_TOKEN, this.DISABLE_TOKEN];
   }
 
   /**
@@ -504,7 +508,7 @@ export class Wallet {
       'lastLedgerSequence', 'ledgerSequenceDelta', 'maxFee', 'maxFeeRate', 'maxValue', 'memo', 'transferId', 'message', 'minConfirms',
       'minValue', 'noSplitChange', 'numBlocks', 'recipients', 'reservation', 'sequenceId', 'strategy',
       'targetWalletUnspents', 'trustlines', 'type', 'unspents', 'nonParticipation', 'validFromBlock', 'validToBlock', 'messageKey',
-      'stakingOptions'
+      'stakingOptions',
     ];
   }
 
@@ -2030,12 +2034,12 @@ export class Wallet {
       params.reqId = reqId;
       const coin = self.baseCoin;
       if (_.isObject(params.recipients)) {
-        params.recipients.map(function(recipient) {
+        params.recipients.map(function (recipient) {
           const amount = new BigNumber(recipient.amount);
           if (amount.isNegative()) {
             throw new Error('invalid argument for amount - positive number greater than zero or numeric string expected');
           }
-          if (!coin.valuelessTransferAllowed() && amount.isZero()) {
+          if (!coin.valuelessTransferAllowed() && amount.isZero() && this.typeKeys.includes(params.type)) {
             throw new Error('invalid argument for amount - positive number greater than zero or numeric string expected');
           }
         });
@@ -2049,7 +2053,7 @@ export class Wallet {
         'lastLedgerSequence', 'ledgerSequenceDelta', 'gasPrice',
         'noSplitChange', 'unspents', 'comment', 'otp', 'changeAddress',
         'instant', 'memo', 'type', 'trustlines', 'transferId',
-        'stakingOptions'
+        'stakingOptions',
       ]);
       const finalTxParams = _.extend({}, halfSignedTransaction, selectParams);
       self.bitgo.setRequestTracer(reqId);
