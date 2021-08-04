@@ -22,7 +22,13 @@ const coins = {
   BTG: 'btg',
   LTC: 'ltc',
   ZEC: 'zec',
-  DASH: 'dash'
+  DASH: 'dash',
+  VRSC: 'vrsc',
+  VERUSTEST: 'verustest',
+  DEFAULT: 'default',
+  KMD: 'kmd',
+  DOGE: 'doge',
+  DGB: 'dgb'
 }
 
 function getDefaultBip32Mainnet () {
@@ -31,6 +37,13 @@ function getDefaultBip32Mainnet () {
     public: 0x0488b21e,
     // base58 'xprv'
     private: 0x0488ade4
+  }
+}
+
+function getDogeBip32Mainnet () {
+  return {
+    public: 0x02facafd,
+    private: 0x02fac398
   }
 }
 
@@ -149,6 +162,62 @@ module.exports = {
     coin: coins.DASH
   },
 
+  default: {
+    messagePrefix: '\x15Verus signed data:\n',
+    bech32: 'bc',
+    bip32: getDefaultBip32Mainnet(),
+    pubKeyHash: 0x3c,
+    scriptHash: 0x55,
+    verusID: 0x66,
+    wif: 0xBC,
+    consensusBranchId: {
+      1: 0x00,
+      2: 0x00,
+      3: 0x5ba81b19,
+      4: 0x76b809bb
+    },
+    coin: coins.DEFAULT,
+    isPBaaS: true
+  },
+
+  digibyte: {
+    messagePrefix: '\x19Digibyte Signed Message:\n',
+    bip44: 20,
+    bip32: getDefaultBip32Mainnet(),
+    pubKeyHash: 0x1e,
+    scriptHash: 0x5,
+    wif: 0x80,
+    coin: coins.DGB,
+    dustThreshold: 1000
+  },
+
+  doge: {
+    messagePrefix: '\x19Dogecoin Signed Message:\n',
+    bip44: 3,
+    bip32: getDogeBip32Mainnet(),
+    pubKeyHash: 0x1e,
+    scriptHash: 0x16,
+    wif: 0x9e,
+    coin: coins.DOGE,
+    dustThreshold: 0 // https://github.com/dogecoin/dogecoin/blob/v1.7.1/src/core.h#L155-L160
+  },
+
+  kmd: {
+    messagePrefix: '\x18Komodo Signed Message:\n',
+    bech32: 'bc',
+    bip32: getDefaultBip32Mainnet(),
+    pubKeyHash: 0x3c,
+    scriptHash: 0x55,
+    wif: 0xBC,
+    consensusBranchId: {
+      1: 0x00,
+      2: 0x00,
+      3: 0x5ba81b19,
+      4: 0x76b809bb
+    },
+    coin: coins.KMD,
+  },
+
   // https://github.com/litecoin-project/litecoin/blob/master/src/validation.cpp
   // https://github.com/litecoin-project/litecoin/blob/master/src/chainparams.cpp
   litecoin: {
@@ -170,6 +239,42 @@ module.exports = {
     coin: coins.LTC
   },
 
+  verus: {
+    messagePrefix: '\x15Verus signed data:\n',
+    bech32: 'bc',
+    bip32: getDefaultBip32Mainnet(),
+    pubKeyHash: 0x3c,
+    scriptHash: 0x55,
+    verusID: 0x66,
+    wif: 0xBC,
+    consensusBranchId: {
+      1: 0x00,
+      2: 0x00,
+      3: 0x5ba81b19,
+      4: 0x76b809bb
+    },
+    coin: coins.VRSC,
+    isPBaaS: true
+  },
+
+  verustest: {
+    messagePrefix: '\x15Verus signed data:\n',
+    bech32: 'bc',
+    bip32: getDefaultBip32Mainnet(),
+    pubKeyHash: 0x3c,
+    scriptHash: 0x55,
+    verusID: 0x66,
+    wif: 0xBC,
+    consensusBranchId: {
+      1: 0x00,
+      2: 0x00,
+      3: 0x5ba81b19,
+      4: 0x76b809bb
+    },
+    coin: coins.VRSC,
+    isPBaaS: true
+  },
+
   // https://github.com/zcash/zcash/blob/master/src/validation.cpp
   // https://github.com/zcash/zcash/blob/master/src/chainparams.cpp
   zcash: {
@@ -189,7 +294,7 @@ module.exports = {
       // 4: 0xf5b9230b (Heartwood branch id, see https://zips.z.cash/zip-0250)
       4: 0xe9ff75a6 // (Canopy branch id, see https://zips.z.cash/zip-0251)
     },
-    coin: coins.ZEC
+    coin: coins.ZEC,
   },
   zcashTest: {
     messagePrefix: '\x18ZCash Signed Message:\n',
@@ -206,6 +311,6 @@ module.exports = {
       // 4: 0xf5b9230b (Heartwood branch id, see https://zips.z.cash/zip-0250)
       4: 0xe9ff75a6 // (Canopy branch id, see https://zips.z.cash/zip-0251)
     },
-    coin: coins.ZEC
+    coin: coins.ZEC,
   }
 }

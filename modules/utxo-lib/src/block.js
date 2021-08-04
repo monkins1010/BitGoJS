@@ -20,7 +20,7 @@ function Block (network) {
   this.bits = 0
   this.nonce = 0
   this.network = network
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     this.finalSaplingRoot = null
     this.solutionSize = 0
     this.solution = null
@@ -40,15 +40,15 @@ Block.fromBuffer = function (buffer, network) {
   block.version = bufferReader.readInt32()
   block.prevHash = bufferReader.readSlice(32)
   block.merkleRoot = bufferReader.readSlice(32)
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     block.finalSaplingRoot = bufferReader.readSlice(32)
   }
   block.timestamp = bufferReader.readUInt32()
   block.bits = bufferReader.readUInt32()
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     block.nonce = bufferReader.readSlice(32)
     block.solutionSize = bufferReader.readVarInt()
-    block.solution = bufferReader.readSlice(1344)
+    block.solution = bufferReader.readSlice(block.solutionSize)
   } else {
     // Not sure sure why the nonce is read as UInt 32 and not as a slice
     block.nonce = bufferReader.readUInt32()
@@ -74,7 +74,7 @@ Block.fromBuffer = function (buffer, network) {
 }
 
 Block.prototype.byteLength = function (headersOnly) {
-  if (coins.isZcash(this.network)) {
+  if (coins.isZcashCompatible(this.network)) {
     if (headersOnly) {
       return Block.ZCASH_HEADER_BYTE_SIZE
     }
@@ -119,12 +119,12 @@ Block.prototype.toBuffer = function (headersOnly) {
   bufferWriter.writeInt32(this.version)
   bufferWriter.writeSlice(this.prevHash)
   bufferWriter.writeSlice(this.merkleRoot)
-  if (coins.isZcash(this.network)) {
+  if (coins.isZcashCompatible(this.network)) {
     bufferWriter.writeSlice(this.finalSaplingRoot)
   }
   bufferWriter.writeUInt32(this.timestamp)
   bufferWriter.writeUInt32(this.bits)
-  if (coins.isZcash(this.network)) {
+  if (coins.isZcashCompatible(this.network)) {
     bufferWriter.writeSlice(this.nonce)
     // TODO: use writeVarInt
     varuint.encode(this.solutionSize, bufferWriter.buffer, bufferWriter.offset)

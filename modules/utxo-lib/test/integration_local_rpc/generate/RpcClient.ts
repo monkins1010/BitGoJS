@@ -82,7 +82,7 @@ export class RpcClient {
   }
 
   async getRawTransactionVerbose(txid: string): Promise<unknown> {
-    let verbose = coins.isZcash(this.network) ? 1 : true;
+    let verbose = coins.isZcashCompatible(this.network) ? 1 : true;
     return await this.exec('getrawtransaction', txid, verbose);
   }
 

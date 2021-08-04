@@ -25,6 +25,19 @@ function getNetworkName (network) {
  */
 function getMainnet (network) {
   switch (network) {
+    case networks.verus:
+    case networks.verustest:
+      return networks.verus
+
+    case networks.kmd:
+      return networks.kmd
+
+    case networks.doge:
+      return networks.doge
+
+    case networks.digibyte:
+      return networks.digibyte
+
     case networks.bitcoin:
     case networks.testnet:
       return networks.bitcoin
@@ -52,8 +65,13 @@ function getMainnet (network) {
     case networks.zcash:
     case networks.zcashTest:
       return networks.zcash
+
+    case networks.default:
+      return networks.default
+
+    default:
+      return network
   }
-  throw new TypeError(`invalid network`)
 }
 
 /**
@@ -107,7 +125,7 @@ function getTestnet (network) {
     throw new Error(`invalid argument`)
   }
   if (testnets.length === 0) {
-    return
+    return null
   }
   if (testnets.length === 1) {
     return testnets[0]
@@ -173,6 +191,54 @@ function isZcash (network) {
 
 /**
  * @param {Network} network
+ * @returns {boolean} true iff network is Verus or VerusTest
+ */
+ function isVerus (network) {
+  return getMainnet(network) === networks.verus
+}
+
+/**
+ * @param {Network} network
+ * @returns {boolean} true iff network is PBaaS compatible
+ */
+ function isPBaaS (network) {
+  return network && !!network.isPBaaS
+}
+
+/**
+ * @param {Network} network
+ * @returns {boolean} true iff network is zcash compatible
+ */
+ function isZcashCompatible (network) {
+  return isZcash(network) || isPBaaS(network) || isKomodo(network)
+}
+
+/**
+ * @param {Network} network
+ * @returns {boolean} true iff network is Komodo
+ */
+ function isKomodo (network) {
+  return getMainnet(network) === networks.kmd
+}
+
+/**
+ * @param {Network} network
+ * @returns {boolean} true iff network is Doge
+ */
+ function isDoge (network) {
+  return getMainnet(network) === networks.doge
+}
+
+/**
+ * @param {Network} network
+ * @returns {boolean} true iff network is Digibyte
+ */
+ function isDigibyte (network) {
+  return getMainnet(network) === networks.digibyte
+}
+
+/**
+ * @param {Network} network
  * @returns {boolean} returns true iff network is any of the network stated in the argument
  */
 const isValidNetwork = typeforce.oneOf(
@@ -182,7 +248,12 @@ const isValidNetwork = typeforce.oneOf(
   isBitcoinSV,
   isDash,
   isLitecoin,
-  isZcash
+  isZcash,
+  isVerus,
+  isPBaaS,
+  isKomodo,
+  isDoge,
+  isDigibyte
 )
 
 module.exports = {
@@ -210,6 +281,12 @@ module.exports = {
   isDash,
   isLitecoin,
   isZcash,
+  isZcashCompatible,
+  isVerus,
+  isPBaaS,
+  isKomodo,
+  isDoge,
+  isDigibyte,
 
   isValidNetwork,
   /**
