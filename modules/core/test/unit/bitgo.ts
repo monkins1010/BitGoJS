@@ -2,6 +2,7 @@
 // Tests for BitGo Object
 //
 
+import * as crypto from 'crypto';
 import * as should from 'should';
 import * as nock from 'nock';
 import * as Bluebird from 'bluebird';
@@ -279,13 +280,30 @@ describe('BitGo Prototype Methods', function() {
   });
 
   describe('ECDH sharing secret', () => {
+    function getKey(seed: string) {
+      return bitcoin.HDNode.fromSeedBuffer(
+          crypto.createHash('sha256').update(seed).digest()
+      ).keyPair;
+    }
+
     it('should calculate a new ECDH sharing secret correctly', () => {
-      const bitgo = new TestBitGo();
-      const eckey1 = bitcoin.ECPair.makeRandom({ network: bitcoin.networks[common.getNetwork()] });
-      const eckey2 = bitcoin.ECPair.makeRandom({ network: bitcoin.networks[common.getNetwork()] });
-      const sharingKey1 = bitgo.getECDHSecret({ eckey: eckey1, otherPubKeyHex: eckey2.getPublicKeyBuffer().toString('hex') });
-      const sharingKey2 = bitgo.getECDHSecret({ eckey: eckey2, otherPubKeyHex: eckey1.getPublicKeyBuffer().toString('hex') });
-      sharingKey1.should.equal(sharingKey2);
+      for (let i=0; i<256; i++) {
+        const bitgo = new TestBitGo();
+        const eckey1 = getKey(`${i}.a`);
+        const eckey2 = getKey(`${i}.b`);
+        const sharingKey1 = bitgo.getECDHSecret({ eckey: eckey1, otherPubKeyHex: eckey2.getPublicKeyBuffer().toString('hex') });
+        const sharingKey2 = bitgo.getECDHSecret({ eckey: eckey2, otherPubKeyHex: eckey1.getPublicKeyBuffer().toString('hex') });
+        sharingKey1.should.equal(sharingKey2);
+
+        switch (i) {
+          case 0:
+            sharingKey1.should.eql('465ffe5745325998b83fb39631347148e24d4f21b3f3b54739c264d5c42db4b8')
+            break;
+          case 1:
+            sharingKey1.should.eql('61ff44fc1af8061a433a314b7b8be8ae352c10f62aac5887047dbaa5643b818d');
+            break;
+        }
+      }
     });
   });
 
@@ -450,6 +468,29 @@ describe('BitGo Prototype Methods', function() {
       responseData.signatureSubject.should.equal('1521590532925|/api/v2/tltc/wallet/5941b202b42fcbc707170d5b597491d9/address/QNc4RFAcbvqmtrR1kR2wbGLCx6tEvojFYE?segwit=1|200|{"id":"5a7ca8bcaf52c8e807c575fb692609ec","address":"QNc4RFAcbvqmtrR1kR2wbGLCx6tEvojFYE","chain":0,"index":2,"coin":"tltc","wallet":"5941b202b42fcbc707170d5b597491d9","coinSpecific":{"redeemScript":"522102835bcfd130f7a56f72c905b782d90b66e22f88ad3309cf72af5138a7d44be8b3210322c7f42a1eb212868eab78db7ba64846075d98c7f4c7aa25a02e57871039e0cd210265825be0d5bf957fb72abd7c23bf0836a78a15f951a073467cd5c99e03ce7ab753ae"},"balance":{"updated":"2018-02-28T23:48:07.341Z","numTx":1,"numUnspents":1,"totalReceived":20000000}}');
       responseData.expectedHmac.should.equal('30a5943043ab4b0503d807f0cca7dac3a670e8785331322567db5189432b87ec');
       responseData.isValid.should.equal(true);
+    }));
+
+    it('should include request body as part of the hmac', co(function* () {
+      const url = 'https://bitgo.fakeurl';
+      const body = { test: 'test' };
+
+      const fixedUnixTime = 1627374646;
+      const originalDateNow = Date.now;
+      Date.now = () => fixedUnixTime;
+
+      try {
+        nock(url)
+          .post('/', body)
+          .reply(201, undefined, {
+            hmac: '677e0c9a65ca384415945cb19b40ae38eaadfbce3ccce8c5d7bf37c1973b2553',
+            timestamp: String(fixedUnixTime),
+          });
+
+        const resp = (yield bitgo.post(url).send(body)) as any;
+        resp.req.headers['hmac'].should.equal('4425a4004ef2724add25b4dd019d21c66394653a049d82e37df3a2c356b5706d');
+      } finally {
+        Date.now = originalDateNow;
+      }
     }));
 
     it('should recognize trailing slash inconsistency', () => {

@@ -7,6 +7,7 @@
 import * as superagent from 'superagent';
 import * as bitcoin from '@bitgo/utxo-lib';
 import { makeRandomKey, hdPath } from './bitcoin';
+import * as secp256k1 from 'secp256k1';
 import bitcoinMessage = require('bitcoinjs-message');
 import { BaseCoin } from './v2/baseCoin';
 const PendingApprovals = require('./pendingapprovals');
@@ -16,7 +17,6 @@ import bs58 = require('bs58');
 import * as common from './common';
 import { EnvironmentName, AliasEnvironments } from './v2/environments';
 import { NodeCallback, RequestTracer as IRequestTracer, V1Network } from './v2/types';
-import { Util } from './v2/internal/util';
 import * as Bluebird from 'bluebird';
 import co = Bluebird.coroutine;
 import pjson = require('../package.json');
@@ -438,7 +438,6 @@ export class BitGo {
     }
 
     common.setNetwork(common.Environments[env].network);
-    common.setRmgNetwork(common.Environments[env].rmgNetwork);
 
     this._baseApiUrl = this._baseUrl + '/api/v1';
     this._baseApiUrlV2 = this._baseUrl + '/api/v2';
@@ -537,20 +536,6 @@ export class BitGo {
       // prevent IE from caching requests
       req.set('If-Modified-Since', 'Mon, 26 Jul 1997 05:00:00 GMT');
 
-      if (self._token) {
-        const data = serializeRequestData(req);
-        setRequestQueryString(req);
-
-        const requestProperties = self.calculateRequestHeaders({ url: req.url, token: self._token, method, text: data || '' });
-        req.set('Auth-Timestamp', requestProperties.timestamp.toString());
-
-        // we're not sending the actual token, but only its hash
-        req.set('Authorization', 'Bearer ' + requestProperties.tokenHash);
-
-        // set the HMAC
-        req.set('HMAC', requestProperties.hmac);
-      }
-
       if (!(process as any).browser) {
         // If not in the browser, set the User-Agent. Browsers don't allow
         // setting of User-Agent, so we must disable this when run in the
@@ -563,6 +548,25 @@ export class BitGo {
 
       const originalThen = req.then.bind(req);
       req.then = (onfulfilled, onrejected) => {
+        if (self._token) {
+          const data = serializeRequestData(req);
+          setRequestQueryString(req);
+
+          const requestProperties = self.calculateRequestHeaders({
+            url: req.url,
+            token: self._token,
+            method,
+            text: data || '',
+          });
+          req.set('Auth-Timestamp', requestProperties.timestamp.toString());
+
+          // we're not sending the actual token, but only its hash
+          req.set('Authorization', 'Bearer ' + requestProperties.tokenHash);
+
+          // set the HMAC
+          req.set('HMAC', requestProperties.hmac);
+        }
+
         /**
          * Verify the response before calling the original onfulfilled handler,
          * and make sure onrejected is called if a verification error is encountered
@@ -945,10 +949,16 @@ export class BitGo {
       throw new Error('eckey object required');
     }
 
-    const otherKeyPub = bitcoin.ECPair.fromPublicKeyBuffer(Buffer.from(otherPubKeyHex, 'hex'));
-    const secretPoint = otherKeyPub.Q.multiply((eckey as bitcoin.ECPair).d);
-    const secret = Util.bnToByteArrayUnsigned(secretPoint.affineX);
-    return Buffer.from(secret).toString('hex');
+    const otherKeyPub = Buffer.from(otherPubKeyHex, 'hex');
+    const secretPoint = (eckey as bitcoin.ECPair).d.toBuffer(32);
+    return Buffer.from(
+        // FIXME(BG-34386): we should use `secp256k1.ecdh()` in the future
+        //                  see discussion here https://github.com/bitcoin-core/secp256k1/issues/352
+        secp256k1.publicKeyTweakMul(otherKeyPub, secretPoint)
+    )
+        // this implementation does not include the parity byte
+        .slice(1)
+        .toString('hex');
   }
 
   /**
@@ -1038,9 +1048,13 @@ export class BitGo {
     const clientDerivedNode = hdPath(clientHDNode).derive(derivationPath);
     const serverDerivedNode = hdPath(serverHDNode).derive(derivationPath);
 
-    // calculating one-time ECDH key
-    const secretPoint = serverDerivedNode.keyPair.__Q.multiply(clientDerivedNode.keyPair.d);
-    const secret = secretPoint.getEncoded().toString('hex');
+    const publicKey = serverDerivedNode.keyPair.getPublicKeyBuffer();
+    const secretKey = clientDerivedNode.keyPair.d.toBuffer(32);
+    const secret = Buffer.from(
+        // FIXME(BG-34386): we should use `secp256k1.ecdh()` in the future
+        //                  see discussion here https://github.com/bitcoin-core/secp256k1/issues/352
+        secp256k1.publicKeyTweakMul(publicKey, secretKey)
+    ).toString('hex');
 
     // decrypt token with symmetric ECDH key
     let response: TokenIssuance;

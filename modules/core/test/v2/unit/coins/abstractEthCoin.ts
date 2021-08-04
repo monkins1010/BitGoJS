@@ -49,8 +49,12 @@ describe('ETH-like coins', () => {
               ['string', 'address', 'uint', 'address', 'uint', 'uint'],
               [
                 signatureSaltMap.token[coinName],
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore BG-34579: known compatibility issue with @types/ethereumjs-util
                 new ethUtil.BN(ethUtil.stripHexPrefix(to), 16),
                 amount,
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore BG-34579: known compatibility issue with @types/ethereumjs-util
                 new ethUtil.BN(ethUtil.stripHexPrefix(tokenContractAddress), 16),
                 expireTime,
                 sequenceId,
@@ -63,6 +67,8 @@ describe('ETH-like coins', () => {
               ['string', 'address', 'uint', 'uint', 'uint'],
               [
                 signatureSaltMap.native[coinName],
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore BG-34579: known compatibility issue with @types/ethereumjs-util
                 new ethUtil.BN(ethUtil.stripHexPrefix(to), 16),
                 amount,
                 expireTime,
@@ -82,6 +88,8 @@ describe('ETH-like coins', () => {
         const { signature } = Eth.Utils.decodeTransferData(tx.toJson().data);
         const { v, r, s } = ethUtil.fromRpcSig(signature);
         const operationHash = getOperationHash(tx);
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore known compatibility issue with @types/ethereumjs-util
         const pubKeyBuffer = ethUtil.ecrecover(operationHash, v, r, s);
         return ethUtil.bufferToHex(ethUtil.pubToAddress(ethUtil.importPublic(pubKeyBuffer)));
       };
