@@ -2,7 +2,7 @@
   "name": "@bitgo/utxo-lib",
   "version": "1.9.5",
   "description": "Client-side Bitcoin JavaScript library",
-  "main": "./dist/src/index.js",
+  "main": "./src/index.js",
   "engines": {
     "node": ">=10.22.0 <16",
     "npm": ">=3.10.10"
@@ -39,7 +39,7 @@
     "bech32": "0.0.3",
     "bigi": "^1.4.0",
     "bip66": "^1.1.0",
-    "bitcoin-ops": "^1.3.0",
+    "bitcoin-ops": "git+https://github.com/VerusCoin/bitcoin-ops",
     "bs58check": "^2.0.0",
     "create-hash": "^1.1.0",
     "create-hmac": "^1.1.3",
@@ -67,7 +67,8 @@
     "proxyquire": "^1.4.0",
     "sinon": "^1.12.2",
     "standard": "^9.0.2",
-    "ts-node": "^9.1.1"
+    "ts-node": "^9.1.1",
+    "typescript": "^4.3.5"
   },
   "license": "MIT",
   "optionalDependencies": {

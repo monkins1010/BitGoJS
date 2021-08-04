@@ -89,12 +89,18 @@ class SmartTransactionSignatures {
 
   isValid()
   {
-    return this.version > 0 && this.version < 2 && isDefinedHashType(this.sigHashType) && this.signatures.length > 0
+    return this.version > 0 && this.version < 2 && bscript.isDefinedHashType(this.sigHashType) && this.signatures.length > 0
   }
 
   __byteLength()
   {
     return this.signatures.reduce(function (a, x) { return a + x.__byteLength() }, 2 + varuint.encodingLength(this.signatures.length))
+  }
+
+  minLength()
+  {
+    checkSigs = new SmartTransactionSignatures()
+    return checkSigs.__byteLength()
   }
 
   toBuffer(buffer, initialOffset)
@@ -152,15 +158,25 @@ class SmartTransactionSignatures {
     }
   
     try {
+      if (buffer.length < this.minLength())
+      {
+        return initialOffset || 0
+      }
+  
       this.version = readUInt8()
       this.sigHashType = readUInt8()
+
+      if (!(this.version > 0 && this.version < 2 && bscript.isDefinedHashType(this.sigHashType)))
+      {
+        return initialOffset || 0
+      }
+  
       this.signatures = this.signatures ?? []
       for (let numSignatures = readVarInt(); numSignatures > 0; numSignatures--)
       {
         this.signatures[this.signatures.length] = readOneSig()
       }
     } catch (error) {
-      console.log(error)
       this.version = 0
       return initialOffset || 0
     }
