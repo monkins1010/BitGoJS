@@ -34,7 +34,7 @@ function Transaction (network = networks.bitcoin) {
   this.ins = []
   this.outs = []
   this.network = network
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     // ZCash version >= 2
     this.joinsplits = []
     this.joinsplitPubkey = []
@@ -92,7 +92,7 @@ Transaction.fromBuffer = function (buffer, network = networks.bitcoin, __noStric
   let tx = new Transaction(network)
   tx.version = bufferReader.readInt32()
 
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     // Split the header into fOverwintered and nVersion
     tx.overwintered = tx.version >>> 31  // Must be 1 for version 3 and up
     tx.version = tx.version & 0x07FFFFFFF  // 3 for overwinter
@@ -121,7 +121,7 @@ Transaction.fromBuffer = function (buffer, network = networks.bitcoin, __noStric
   var hasWitnesses = false
   if (marker === Transaction.ADVANCED_TRANSACTION_MARKER &&
       flag === Transaction.ADVANCED_TRANSACTION_FLAG &&
-      !coins.isZcash(network)) {
+      !coins.isZcashCompatible(network)) {
     hasWitnesses = true
   } else {
     bufferReader.offset -= 2
@@ -161,7 +161,7 @@ Transaction.fromBuffer = function (buffer, network = networks.bitcoin, __noStric
 
   tx.locktime = bufferReader.readUInt32()
 
-  if (coins.isZcash(network)) {
+  if (coins.isZcashCompatible(network)) {
     if (tx.isOverwinterCompatible()) {
       tx.expiryHeight = bufferReader.readUInt32()
     }
@@ -221,15 +221,15 @@ Transaction.isCoinbaseHash = function (buffer) {
 }
 
 Transaction.prototype.isSaplingCompatible = function () {
-  return coins.isZcash(this.network) && this.version >= zcashVersion.SAPLING
+  return coins.isZcashCompatible(this.network) && this.version >= zcashVersion.SAPLING
 }
 
 Transaction.prototype.isOverwinterCompatible = function () {
-  return coins.isZcash(this.network) && this.version >= zcashVersion.OVERWINTER
+  return coins.isZcashCompatible(this.network) && this.version >= zcashVersion.OVERWINTER
 }
 
 Transaction.prototype.supportsJoinSplits = function () {
-  return coins.isZcash(this.network) && this.version >= zcashVersion.JOINSPLITS_SUPPORT
+  return coins.isZcashCompatible(this.network) && this.version >= zcashVersion.JOINSPLITS_SUPPORT
 }
 
 Transaction.prototype.versionSupportsDashSpecialTransactions = function () {
@@ -342,8 +342,8 @@ Transaction.prototype.getJoinSplitByteLength = function () {
 }
 
 Transaction.prototype.zcashTransactionByteLength = function () {
-  if (!coins.isZcash(this.network)) {
-    throw new Error('zcashTransactionByteLength can only be called when using Zcash network')
+  if (!coins.isZcashCompatible(this.network)) {
+    throw new Error('zcashTransactionByteLength can only be called when using Zcash or compatible network')
   }
   var byteLength = 0
   byteLength += 4  // Header
@@ -376,7 +376,7 @@ Transaction.prototype.zcashTransactionByteLength = function () {
 Transaction.prototype.__byteLength = function (__allowWitness) {
   var hasWitnesses = __allowWitness && this.hasWitnesses()
 
-  if (coins.isZcash(this.network)) {
+  if (coins.isZcashCompatible(this.network)) {
     return this.zcashTransactionByteLength()
   }
 
@@ -402,7 +402,7 @@ Transaction.prototype.clone = function () {
     newTx.extraPayload = this.extraPayload
   }
 
-  if (coins.isZcash(this.network)) {
+  if (coins.isZcashCompatible(this.network)) {
     newTx.consensusBranchId = this.consensusBranchId
   }
   if (this.isOverwinterCompatible()) {
@@ -589,7 +589,7 @@ Transaction.prototype.getPrevoutHash = function (hashType) {
       bufferWriter.writeUInt32(txIn.index)
     })
 
-    if (coins.isZcash(this.network)) {
+    if (coins.isZcashCompatible(this.network)) {
       return this.getBlake2bHash(bufferWriter.buffer, 'ZcashPrevoutHash')
     }
     return bcrypto.hash256(bufferWriter.buffer)
@@ -612,7 +612,7 @@ Transaction.prototype.getSequenceHash = function (hashType) {
       bufferWriter.writeUInt32(txIn.sequence)
     })
 
-    if (coins.isZcash(this.network)) {
+    if (coins.isZcashCompatible(this.network)) {
       return this.getBlake2bHash(bufferWriter.buffer, 'ZcashSequencHash')
     }
     return bcrypto.hash256(bufferWriter.buffer)
@@ -641,7 +641,7 @@ Transaction.prototype.getOutputsHash = function (hashType, inIndex) {
       bufferWriter.writeVarSlice(out.script)
     })
 
-    if (coins.isZcash(this.network)) {
+    if (coins.isZcashCompatible(this.network)) {
       return this.getBlake2bHash(bufferWriter.buffer, 'ZcashOutputsHash')
     }
     return bcrypto.hash256(bufferWriter.buffer)
@@ -653,7 +653,7 @@ Transaction.prototype.getOutputsHash = function (hashType, inIndex) {
     bufferWriter.writeUInt64(output.value)
     bufferWriter.writeVarSlice(output.script)
 
-    if (coins.isZcash(this.network)) {
+    if (coins.isZcashCompatible(this.network)) {
       return this.getBlake2bHash(bufferWriter.buffer, 'ZcashOutputsHash')
     }
     return bcrypto.hash256(bufferWriter.buffer)
@@ -671,8 +671,8 @@ Transaction.prototype.getOutputsHash = function (hashType, inIndex) {
  */
 Transaction.prototype.hashForZcashSignature = function (inIndex, prevOutScript, value, hashType) {
   typeforce(types.tuple(types.UInt32, types.Buffer, types.Satoshi, types.UInt32), arguments)
-  if (!coins.isZcash(this.network)) {
-    throw new Error('hashForZcashSignature can only be called when using Zcash network')
+  if (!coins.isZcashCompatible(this.network)) {
+    throw new Error('hashForZcashSignature can only be called when using Zcash or compatible network')
   }
   if (this.joinsplits.length > 0) {
     throw new Error('Hash signature for Zcash protected transactions is not supported')
@@ -838,7 +838,7 @@ Transaction.prototype.toBuffer = function (buffer, initialOffset) {
 Transaction.prototype.__toBuffer = function (buffer, initialOffset, __allowWitness) {
   if (!buffer) buffer = Buffer.allocUnsafe(this.__byteLength(__allowWitness))
 
-  const bufferWriter = coins.isZcash(this.network)
+  const bufferWriter = coins.isZcashCompatible(this.network)
     ? new ZcashBufferWriter(buffer, initialOffset || 0)
     : new BufferWriter(buffer, initialOffset || 0)
 
