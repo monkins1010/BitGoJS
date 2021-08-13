@@ -13,6 +13,221 @@ function varSliceSize(varSlice)
   return varuint.encodingLength(length) + length
 }
 
+function getSmartOutputObject(evalCode, optParams)
+{
+  switch (evalCode)
+  {
+    case OPS.EVAL_NONE:
+      {
+        return null
+      }
+
+    case OPS.EVAL_STAKEGUARD:
+    case OPS.EVAL_CURRENCY_DEFINITION:
+    case OPS.EVAL_NOTARY_EVIDENCE:
+    case OPS.EVAL_EARNEDNOTARIZATION:
+    case OPS.EVAL_ACCEPTEDNOTARIZATION:
+    case OPS.EVAL_FINALIZE_NOTARIZATION:
+    case OPS.EVAL_CURRENCYSTATE:
+    case OPS.EVAL_RESERVE_TRANSFER:
+    case OPS.EVAL_RESERVE_OUTPUT:
+    case OPS.EVAL_RESERVE_DEPOSIT:
+    case OPS.EVAL_CROSSCHAIN_EXPORT:
+    case OPS.EVAL_CROSSCHAIN_IMPORT:
+    case OPS.EVAL_IDENTITY_PRIMARY:
+    case OPS.EVAL_IDENTITY_COMMITMENT:
+    case OPS.EVAL_IDENTITY_RESERVATION:
+    case OPS.EVAL_FINALIZE_EXPORT:
+    case OPS.EVAL_FEE_POOL:
+    case OPS.EVAL_NOTARY_SIGNATURE:
+      {
+        return optParams.vData[0]
+      }
+
+    default:
+      {
+        return null
+      }
+  }
+}
+
+class SmartObject
+{
+  constructor(EvalCode, ObjectBuffer)
+  {
+    this.evalCode = EvalCode
+    if (ObjectBuffer)
+    {
+      this.objectBuffer = ObjectBuffer
+    }
+  }
+}
+
+/*
+* A Verus identity object
+*/
+class VerusIdentity
+{
+  get PBaaSVer()
+  {
+    return 6
+  }
+
+  get IDVer()
+  {
+    return 5
+  }
+
+  get IdVersionFromSolution(SolVer)
+  {
+    if (SolVer < PBaaSVer())
+    {
+      return 1
+    }
+    else
+    {
+      return 2;
+    }
+  }
+
+  constructor(Version = IdVersionFromSolution(IDVer()), Flags=0, Name="", Parent, SystemID, PrimaryAddresses, MinSignatures, RevocationID, RecoveryID, ZEndpoints, ContentMap, Timelock)
+  {
+    this.version = Version
+    this.flags = Flags
+    this.name = Name
+    if (Parent !== undefined)
+    {
+      this.parent = Parent
+    }
+    if (SystemID !== undefined)
+    {
+      this.systemID = SystemID
+    }
+    if (PrimaryAddresses !== undefined)
+    {
+      this.primaryaddresses = PrimaryAddresses
+    }
+    if (MinSignatures !== undefined)
+    {
+      this.minimumsignatures = MinSignatures
+    }
+    if (RevocationID !== undefined)
+    {
+      this.revocationauthority = RevocationID
+    }
+    if (RecoveryID !== undefined)
+    {
+      this.recoveryauthority = RecoveryID
+    }
+    if (ZEndpoints !== undefined)
+    {
+      if (ZEndpoints.length > 1)
+      {
+        this.privateaddresses = ZEndpoints
+      }
+      this.privateaddress = ZEndpoints[0]
+    }
+    if (ContentMap !== undefined)
+    {
+      this.contentmap = ContentMap
+    }
+    if (Timelock !== undefined)
+    {
+      this.timelock = Timelock
+    }
+  }
+
+
+}
+
+class VerusCurrencyState
+{
+  constructor()
+  {
+
+  }
+}
+
+class VerusCurrencyDefinition
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusPBaaSNotarization
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusProofRoot
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusNativeOutput
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusTokenOutput
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusReserveTransfer
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusExport
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusImport
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusObjectFinalization
+{
+  constructor()
+  {
+    
+  }
+}
+
+class VerusNotaryEvidence
+{
+  constructor()
+  {
+    
+  }
+}
+
 class TxDestination
 {
   get typeInvalid()
@@ -185,12 +400,89 @@ class OptCCParams
     this.m = m
     this.n = n
     this.destinations = destinations
-    this.serializedObjects = serializedObjects
+    this.vData = serializedObjects
   }
 
+  getParamObject()
+  {
+    switch (this.evalCode)
+    {
+      case OPS.EVAL_NONE:
+        {
+          return null
+        }
+  
+      case OPS.EVAL_STAKEGUARD:
+      case OPS.EVAL_CURRENCY_DEFINITION:
+      case OPS.EVAL_NOTARY_EVIDENCE:
+      case OPS.EVAL_EARNEDNOTARIZATION:
+      case OPS.EVAL_ACCEPTEDNOTARIZATION:
+      case OPS.EVAL_FINALIZE_NOTARIZATION:
+      case OPS.EVAL_CURRENCYSTATE:
+      case OPS.EVAL_RESERVE_TRANSFER:
+      case OPS.EVAL_RESERVE_OUTPUT:
+      case OPS.EVAL_RESERVE_DEPOSIT:
+      case OPS.EVAL_CROSSCHAIN_EXPORT:
+      case OPS.EVAL_CROSSCHAIN_IMPORT:
+      case OPS.EVAL_IDENTITY_PRIMARY:
+      case OPS.EVAL_IDENTITY_COMMITMENT:
+      case OPS.EVAL_IDENTITY_RESERVATION:
+      case OPS.EVAL_FINALIZE_EXPORT:
+      case OPS.EVAL_FEE_POOL:
+      case OPS.EVAL_NOTARY_SIGNATURE:
+        {
+          if (this.vData.length)
+          {
+            return this.vData[0]
+          }
+          else
+          {
+            return null
+          }
+        }
+  
+      default:
+        {
+          return null
+        }
+    }
+  }
+  
   isValid()
   {
-    return this.version > 0 && this.version < 4 && ((this.version < 3 && this.evalCode < 2) || 
+    var validEval = false;
+    switch (evalCode)
+    {
+      case OPS.EVAL_NONE:
+        {
+          validEval = true
+          break
+        }
+
+      case OPS.EVAL_STAKEGUARD:
+      case OPS.EVAL_CURRENCY_DEFINITION:
+      case OPS.EVAL_NOTARY_EVIDENCE:
+      case OPS.EVAL_EARNEDNOTARIZATION:
+      case OPS.EVAL_ACCEPTEDNOTARIZATION:
+      case OPS.EVAL_FINALIZE_NOTARIZATION:
+      case OPS.EVAL_CURRENCYSTATE:
+      case OPS.EVAL_RESERVE_TRANSFER:
+      case OPS.EVAL_RESERVE_OUTPUT:
+      case OPS.EVAL_RESERVE_DEPOSIT:
+      case OPS.EVAL_CROSSCHAIN_EXPORT:
+      case OPS.EVAL_CROSSCHAIN_IMPORT:
+      case OPS.EVAL_IDENTITY_PRIMARY:
+      case OPS.EVAL_IDENTITY_COMMITMENT:
+      case OPS.EVAL_IDENTITY_RESERVATION:
+      case OPS.EVAL_FINALIZE_EXPORT:
+      case OPS.EVAL_FEE_POOL:
+      case OPS.EVAL_NOTARY_SIGNATURE:
+        {
+          validEval = this.vData && this.vData.length > 0
+        }
+    }
+    return validEval &&
+           this.version > 0 && this.version < 4 && ((this.version < 3 && this.evalCode < 2) || 
                                                     (this.evalCode <= 0x1a && this.m <= this.n && this.destinations.length > 0))
   }
 
@@ -261,7 +553,7 @@ class OptCCParams
 
     for ( ; this.version && loop < chunks.length; loop++)
     {
-      this.serializedObjects.push(chunks[loop]) // is this an issue to just store as is for the data?
+      this.vData.push(chunks[loop]) // is this an issue to just store as is for the data?
     }
 
     return offset
@@ -278,7 +570,7 @@ class OptCCParams
       chunks.push(Buffer.allocUnsafe(x.__byteLength()))
       x.toBuffer(chunks[chunks.length - 1])
     });
-    this.serializedObjects.forEach(x => {
+    this.vData.forEach(x => {
       chunks.push(x)
     });
     return varSliceSize(bscript.compile(chunks))
@@ -303,7 +595,7 @@ class OptCCParams
       chunks.push(Buffer.allocUnsafe(x.__byteLength()))
       x.toBuffer(chunks[chunks.length - 1])
     });
-    this.serializedObjects.forEach(x => {
+    this.vData.forEach(x => {
       chunks.push(x)
     });
 
