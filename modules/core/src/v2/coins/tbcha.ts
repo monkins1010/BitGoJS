@@ -3,15 +3,12 @@
  */
 import { BitGo } from '../../bitgo';
 import { Bcha } from './bcha';
-import * as bitcoin from '@bitgo/utxo-lib';
-import * as Bluebird from 'bluebird';
+import * as utxolib from '@bitgo/utxo-lib';
 import { BaseCoin } from '../baseCoin';
-import { UtxoNetwork } from './abstractUtxoCoin';
-const co = Bluebird.coroutine;
 
 export class Tbcha extends Bcha {
   constructor(bitgo: BitGo) {
-    super(bitgo, bitcoin.networks.bitcoincashTestnet);
+    super(bitgo, utxolib.networks.bitcoincashTestnet);
   }
 
   static createInstance(bitgo: BitGo): BaseCoin {

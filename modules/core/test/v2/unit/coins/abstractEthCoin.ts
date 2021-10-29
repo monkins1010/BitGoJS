@@ -4,12 +4,11 @@
 
 import * as _ from 'lodash';
 import * as should from 'should';
+import * as bip32 from 'bip32';
 import { TestBitGo } from '../../../lib/test_bitgo';
 import { getBuilder, BaseCoin, Eth } from '@bitgo/account-lib';
 import * as ethAbi from 'ethereumjs-abi';
 import * as ethUtil from 'ethereumjs-util';
-import * as bitgoUtxoLib from '@bitgo/utxo-lib';
-import * as bitcoinMessage from 'bitcoinjs-message';
 import { coins, ContractAddressDefinedToken } from '@bitgo/statics';
 
 describe('ETH-like coins', () => {
@@ -200,7 +199,7 @@ describe('ETH-like coins', () => {
         it('Should generate valid keypair without seed', () => {
           const { pub, prv } = basecoin.generateKeyPair();
           basecoin.isValidPub(pub).should.equal(true);
-          const bitgoKey = bitgoUtxoLib.HDNode.fromBase58(prv);
+          const bitgoKey = bip32.fromBase58(prv);
           basecoin.isValidPub(bitgoKey.neutered().toBase58()).should.equal(true);
         });
 
@@ -208,29 +207,8 @@ describe('ETH-like coins', () => {
           const seed = Buffer.from('c3b09c24731be2851b641d9d5b3f60fa129695c24071768d15654bea207b7bb6', 'hex');
           const { pub, prv } = basecoin.generateKeyPair(seed);
           basecoin.isValidPub(pub).should.equal(true);
-          const bitgoKey = bitgoUtxoLib.HDNode.fromBase58(prv);
+          const bitgoKey = bip32.fromBase58(prv);
           basecoin.isValidPub(bitgoKey.neutered().toBase58()).should.equal(true);
-        });
-      });
-
-      describe('Sign message:', () => {
-        it('should sign and validate a string message', async function () {
-          const keyPair = basecoin.generateKeyPair();
-          const message = 'hello world';
-          const signature = await basecoin.signMessage(keyPair, message);
-          const hdNode = bitgoUtxoLib.HDNode.fromBase58(keyPair.pub);
-
-          bitcoinMessage.verify(message, hdNode.keyPair.getAddress(), signature).should.equal(true);
-        });
-
-        it('should fail to validate a string message with wrong public key', async function () {
-          const keyPair = basecoin.generateKeyPair();
-          const message = 'hello world';
-          const signature = await basecoin.signMessage(keyPair, message);
-
-          const otherKeyPair = basecoin.generateKeyPair();
-          const hdNode = bitgoUtxoLib.HDNode.fromBase58(otherKeyPair.pub);
-          bitcoinMessage.verify(message, hdNode.keyPair.getAddress(), signature).should.equal(false);
         });
       });
 
@@ -273,10 +251,9 @@ describe('ETH-like coins', () => {
           let data;
           let expireTime;
           let sequenceId;
-          let tokenContractAddress;
           if (coin instanceof ContractAddressDefinedToken) {
             decodedData = ethAbi.rawDecode(sendMultisigTokenTypes, Buffer.from(txJson.data.slice(10), 'hex'));
-            [recipient, value, tokenContractAddress, expireTime, sequenceId] = decodedData;
+            [recipient, value /* tokenContractAddress */, , expireTime, sequenceId] = decodedData;
             data = Buffer.from('');
           } else {
             decodedData = ethAbi.rawDecode(sendMultisigTypes, Buffer.from(txJson.data.slice(10), 'hex'));
@@ -327,10 +304,9 @@ describe('ETH-like coins', () => {
           let data;
           let expireTime;
           let sequenceId;
-          let tokenContractAddress;
           if (coin instanceof ContractAddressDefinedToken) {
             decodedData = ethAbi.rawDecode(sendMultisigTokenTypes, Buffer.from(txJson.data.slice(10), 'hex'));
-            [recipient, value, tokenContractAddress, expireTime, sequenceId] = decodedData;
+            [recipient, value /* tokenContractAddress */, , expireTime, sequenceId] = decodedData;
             data = Buffer.from('');
           } else {
             decodedData = ethAbi.rawDecode(sendMultisigTypes, Buffer.from(txJson.data.slice(10), 'hex'));
@@ -393,10 +369,9 @@ describe('ETH-like coins', () => {
           let data;
           let expireTime;
           let sequenceId;
-          let tokenContractAddress;
           if (coin instanceof ContractAddressDefinedToken) {
             decodedData = ethAbi.rawDecode(sendMultisigTokenTypes, Buffer.from(txJson.data.slice(10), 'hex'));
-            [recipient, value, tokenContractAddress, expireTime, sequenceId] = decodedData;
+            [recipient, value /* tokenContractAddress */, , expireTime, sequenceId] = decodedData;
             data = Buffer.from('');
           } else {
             decodedData = ethAbi.rawDecode(sendMultisigTypes, Buffer.from(txJson.data.slice(10), 'hex'));
@@ -439,7 +414,6 @@ describe('ETH-like coins', () => {
         });
 
         it('explain an unsigned transfer transaction', async function () {
-          const key = new Eth.KeyPair({ prv: xprv });
           const destination = '0xfaa8f14f46a99eb439c50e0c3b835cc21dad51b4';
           const contractAddress = '0x9e2c5712ab4caf402a98c4bf58c79a0dfe718ad1';
 

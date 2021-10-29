@@ -89,7 +89,7 @@ export class Transaction extends BaseTransaction {
    */
   private getTransferData(): [string, string] {
     let transferData;
-    this._txBody.cryptoTransfer!.transfers!.accountAmounts!.forEach(transfer => {
+    this._txBody.cryptoTransfer!.transfers!.accountAmounts!.forEach((transfer) => {
       const amount = Long.fromValue(transfer.amount!);
       if (amount.isPositive()) {
         transferData = [stringifyAccountId(transfer.accountID!), amount.toString()];
@@ -99,7 +99,7 @@ export class Transaction extends BaseTransaction {
     return transferData;
   }
 
-  //region getters & setters
+  // region getters & setters
   get txBody(): proto.TransactionBody {
     return this._txBody;
   }
@@ -136,7 +136,7 @@ export class Transaction extends BaseTransaction {
   loadPreviousSignatures(): void {
     if (this._hederaTx.sigMap && this._hederaTx.sigMap.sigPair) {
       const sigPairs = this._hederaTx.sigMap.sigPair;
-      sigPairs.forEach(sigPair => {
+      sigPairs.forEach((sigPair) => {
         const signature = sigPair.ed25519;
         if (signature) {
           this._signatures.push(toHex(signature));
@@ -179,9 +179,9 @@ export class Transaction extends BaseTransaction {
   bodyBytes(bytes: Uint8Array) {
     this.body(proto.Transaction.decode(bytes));
   }
-  //endregion
+  // endregion
 
-  //region helpers
+  // region helpers
   /**
    * Returns this hedera transaction id components in a readable format
    *
@@ -224,7 +224,10 @@ export class Transaction extends BaseTransaction {
    * @param encoder - Object encoder
    * @returns {Uint8Array} - encoded object byte array
    */
-  private encode<T extends { constructor: Function }>(obj: T, encoder?: { encode(arg: T): Writer }): Uint8Array {
+  private encode<CtorFn extends { new (): T }, T extends { constructor: CtorFn }>(
+    obj: T,
+    encoder?: { encode(arg: T): Writer },
+  ): Uint8Array {
     if (encoder) {
       return encoder.encode(obj).finish();
     }
@@ -250,5 +253,5 @@ export class Transaction extends BaseTransaction {
   private getHashOf<T>(obj: T): string {
     return this.sha(this.encode(obj));
   }
-  //endregion
+  // endregion
 }

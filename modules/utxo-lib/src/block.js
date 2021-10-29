@@ -12,6 +12,10 @@ var Transaction = require('./transaction')
 
 function Block (network) {
   typeforce(types.maybe(types.Network), network)
+  if (coins.isZcash(network)) {
+    /* istanbul ignore next */
+    throw new Error('unsupported network')
+  }
   network = network || networks.bitcoin
   this.version = 1
   this.prevHash = null
@@ -28,15 +32,39 @@ function Block (network) {
 }
 
 Block.HEADER_BYTE_SIZE = 80
-Block.ZCASH_HEADER_BYTE_SIZE = 1487
+Block.ZCASH_HEADER_BYTE_SIZE = 140
+
+Block.prototype.byteLength = function (headersOnly) {
+  if (coins.isZcashCompatible(this.network)) {
+    var solutionSizeNum = this.solutionSize || 0
+    var headerSizeNum = Block.ZCASH_HEADER_BYTE_SIZE + varuint.encodingLength(solutionSizeNum) + solutionSizeNum
+    if (headersOnly) {
+      return headerSizeNum
+    }
+    return headerSizeNum +
+      varuint.encodingLength(this.transactions.length) + this.transactions.reduce(function (a, x) {
+        return a + x.byteLength()
+      }, 0)
+  }
+
+  if (headersOnly || !this.transactions) return Block.HEADER_BYTE_SIZE
+
+  return Block.HEADER_BYTE_SIZE +
+    varuint.encodingLength(this.transactions.length) + this.transactions.reduce(function (a, x) {
+      return a + x.byteLength()
+    }, 0)
+}
 
 Block.fromBuffer = function (buffer, network) {
-  if (buffer.length < 80) throw new Error('Buffer too small (< 80 bytes)')
   network = network || networks.bitcoin
 
   const bufferReader = new bufferutils.BufferReader(buffer)
 
   var block = new Block(network)
+
+  let headerLength = block.byteLength(true)
+  if (buffer.length < headerLength) throw new Error('Buffer too small (< ' + headerLength + ' bytes)')
+
   block.version = bufferReader.readInt32()
   block.prevHash = bufferReader.readSlice(32)
   block.merkleRoot = bufferReader.readSlice(32)
@@ -54,7 +82,7 @@ Block.fromBuffer = function (buffer, network) {
     block.nonce = bufferReader.readUInt32()
   }
 
-  if (bufferReader.buffer.length === 80) return block
+  if (bufferReader.buffer.length === headerLength) return block
 
   function readTransaction () {
     var tx = Transaction.fromBuffer(buffer.slice(bufferReader.offset), network, true)
@@ -71,25 +99,6 @@ Block.fromBuffer = function (buffer, network) {
   }
 
   return block
-}
-
-Block.prototype.byteLength = function (headersOnly) {
-  if (coins.isZcashCompatible(this.network)) {
-    if (headersOnly) {
-      return Block.ZCASH_HEADER_BYTE_SIZE
-    }
-    return Block.ZCASH_HEADER_BYTE_SIZE +
-      varuint.encodingLength(this.transactions.length) + this.transactions.reduce(function (a, x) {
-        return a + x.byteLength()
-      }, 0)
-  }
-
-  if (headersOnly || !this.transactions) return Block.HEADER_BYTE_SIZE
-
-  return Block.HEADER_BYTE_SIZE +
-    varuint.encodingLength(this.transactions.length) + this.transactions.reduce(function (a, x) {
-      return a + x.byteLength()
-    }, 0)
 }
 
 Block.fromHex = function (hex, network) {

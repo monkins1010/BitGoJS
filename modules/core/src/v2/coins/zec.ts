@@ -1,7 +1,7 @@
 /**
  * @prettier
  */
-import * as bitGoUtxoLib from '@bitgo/utxo-lib';
+import * as utxolib from '@bitgo/utxo-lib';
 import * as Bluebird from 'bluebird';
 import * as request from 'superagent';
 import { BitGo } from '../../bitgo';
@@ -20,7 +20,7 @@ export interface ZecTransactionBuilder {
 
 export class Zec extends AbstractUtxoCoin {
   constructor(bitgo: BitGo, network?: UtxoNetwork) {
-    super(bitgo, network || bitGoUtxoLib.networks.zcash);
+    super(bitgo, network || utxolib.networks.zcash);
   }
 
   static createInstance(bitgo: BitGo): BaseCoin {
@@ -33,10 +33,6 @@ export class Zec extends AbstractUtxoCoin {
 
   getFamily() {
     return 'zec';
-  }
-
-  getCoinLibrary() {
-    return bitGoUtxoLib;
   }
 
   getFullName() {
@@ -60,25 +56,6 @@ export class Zec extends AbstractUtxoCoin {
     // https://bitgoinc.atlassian.net/browse/BG-26072
     txBuilder.setConsensusBranchId(0xe9ff75a6);
     return txBuilder;
-  }
-
-  /**
-   * Calculate the hash to verify the signature against
-   * @param transaction Transaction object
-   * @param inputIndex
-   * @param pubScript
-   * @param amount The previous output's amount
-   * @param hashType
-   * @returns {*}
-   */
-  calculateSignatureHash(
-    transaction: any,
-    inputIndex: number,
-    pubScript: Buffer,
-    amount: number,
-    hashType: number
-  ): Buffer {
-    return transaction.hashForZcashSignature(inputIndex, pubScript, amount, hashType);
   }
 
   recoveryBlockchainExplorerUrl(url: string) {

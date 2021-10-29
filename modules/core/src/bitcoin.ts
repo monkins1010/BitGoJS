@@ -5,9 +5,8 @@
 /**
  */
 import * as common from './common';
-import * as bitcoin from '@bitgo/utxo-lib';
+import * as utxolib from '@bitgo/utxo-lib';
 import { V1Network } from './v2/types';
-import { InvalidKeyPathError } from './errors';
 const ecurve = require('ecurve');
 const curve = ecurve.getCurveByName('secp256k1');
 const BigInteger = require('bigi');
@@ -21,19 +20,20 @@ try {
   console.log('running without secp256k1 acceleration');
 }
 
-export function getNetwork(network?: V1Network): bitcoin.Network {
+export function getNetwork(network?: V1Network): utxolib.Network {
   network = network || common.getNetwork();
-  return bitcoin.networks[network];
+  return utxolib.networks[network];
 }
 
-export function makeRandomKey(): bitcoin.ECPair {
-  return bitcoin.ECPair.makeRandom({ network: getNetwork() });
+export function makeRandomKey(): utxolib.ECPair {
+  return utxolib.ECPair.makeRandom({ network: getNetwork() });
 }
 
-function getKey(network?: bitcoin.Network): bitcoin.ECPair {
+/** @deprecated - use bip32 package instead */
+function getKey(network?: utxolib.Network): utxolib.ECPair {
   network = network || getNetwork();
   const k = this.keyPair;
-  const result = new bitcoin.ECPair(k.d, k.d ? null : k.Q, { network: network, compressed: k.compressed });
+  const result = new utxolib.ECPair(k.d, k.d ? null : k.Q, { network: network, compressed: k.compressed });
   // Creating Q from d takes ~25ms, so if it's not created, use native bindings to pre-compute
   if (!result.__Q && secp256k1) {
     result.__Q = ecurve.Point.decodeFrom(curve, Buffer.from(secp256k1.publicKeyCreate(k.d.toBuffer(32), false)));
@@ -41,52 +41,17 @@ function getKey(network?: bitcoin.Network): bitcoin.ECPair {
   return result;
 }
 
-bitcoin.HDNode.prototype.getKey = getKey;
+/** @deprecated - use bip32 package instead */
+utxolib.HDNode.prototype.getKey = getKey;
 
-/**
- * Given a key and a path, derive the child key.
- * @param {bitcoin.HDNode} userKey
- * @param {string} path
- * @returns {bitcoin.HDNode}
- */
-export function deriveKeyByPath(userKey: bitcoin.HDNode, path: string): bitcoin.HDNode {
-  let key = userKey;
-  let splitPath = path.split('/');
-  // if a key path starts with "m", it is the path for a master node. derivePath() is used specifically for
-  // deriving master node and we can call it directly.
-  if (splitPath[0] === 'm') {
-    key = userKey.derivePath(path);
-  } else {
-    // if the path does not start with "m", it typically looks like "/x/y/...", and the splitPath
-    // would look like ['', 'x', 'y',...], and we need to get ride of the empty string at index 0.
-    // Then we continue deriving the child by calling derive() on the new child at each subsequent level.
-    splitPath = splitPath.slice(1);
-    for (const p of splitPath) {
-      const index = parseInt(p, 10);
-      if (isNaN(index) || index.toString() != p) {
-        throw new InvalidKeyPathError(path);
-      }
-      key = key.derive(index);
-    }
-  }
-  return key;
-}
-
-/**
- * Derive a child HDNode from a parent HDNode and index. Uses secp256k1 to speed
- * up public key derivations by 100x vs. bitcoinjs-lib implementation.
- *
- * @param   {HDNode} hdnode  parent HDNode
- * @param   {Number} index   child index
- * @returns {HDNode}         derived HDNode
- */
-function deriveFast(hdnode: bitcoin.HDNode, index: number): bitcoin.HDNode {
+/** @deprecated - use bip32 package instead */
+function deriveFast(hdnode: utxolib.HDNode, index: number): utxolib.HDNode {
   // no fast path for private key derivations -- delegate to standard method
   if (!secp256k1 || hdnode.keyPair.d) {
     return hdnode.derive(index);
   }
 
-  const isHardened = index >= bitcoin.HDNode.HIGHEST_BIT;
+  const isHardened = index >= utxolib.HDNode.HIGHEST_BIT;
   if (isHardened) {
     throw new Error('cannot derive hardened key from public key');
   }
@@ -124,8 +89,8 @@ function deriveFast(hdnode: bitcoin.HDNode, index: number): bitcoin.HDNode {
     return deriveFast(hdnode, index + 1);
   }
 
-  const keyPair = new bitcoin.ECPair(null, Ki, { network: hdnode.keyPair.network });
-  const hd = new bitcoin.HDNode(keyPair, IR);
+  const keyPair = new utxolib.ECPair(null, Ki, { network: hdnode.keyPair.network });
+  const hd = new utxolib.HDNode(keyPair, IR);
 
   hd.depth = hdnode.depth + 1;
   hd.index = index;
@@ -134,16 +99,18 @@ function deriveFast(hdnode: bitcoin.HDNode, index: number): bitcoin.HDNode {
   return hd;
 }
 
+export interface Derivable {
+  derive(path: string): utxolib.HDNode;
+  deriveKey(path: string): utxolib.ECPair;
+}
+
 /**
- * Derive a BIP32 path, given a root key
- * We cache keys at each level of hierarchy we derive, to avoid re-deriving (approx 25ms per derivation)
- * @param rootKey key to derive off
- * @returns {*} function which can be used to derive a new HDNode from the root HDNode on a given path
+ * @deprecated - use `derivePath(p)` or `derivePath(sanitizeLegacyPath(p))` instead
  */
-export function hdPath(rootKey): { derive: (path: string) => bitcoin.HDNode; deriveKey: (path: string) => bitcoin.ECPair; } {
+export function hdPath(rootKey): Derivable {
   const cache = {};
-  const derive = function(path: string): bitcoin.HDNode {
-    const components = path.split('/').filter(function(c) {
+  const derive = function (path: string): utxolib.HDNode {
+    const components = path.split('/').filter(function (c) {
       return c !== '';
     });
     // strip any extraneous / characters
@@ -174,7 +141,7 @@ export function hdPath(rootKey): { derive: (path: string) => bitcoin.HDNode; der
     return derived;
   };
 
-  function deriveKey(path: string): bitcoin.ECPair {
+  function deriveKey(path: string): utxolib.ECPair {
     const hdNode = derive(path);
     return hdNode.keyPair;
   }

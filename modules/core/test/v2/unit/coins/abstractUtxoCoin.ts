@@ -1,4 +1,4 @@
-const utxoLib = require('@bitgo/utxo-lib');
+const utxolib = require('@bitgo/utxo-lib');
 import * as nock from 'nock';
 import * as should from 'should';
 import * as sinon from 'sinon';
@@ -16,7 +16,7 @@ import {
   addressInfos,
   emptyAddressInfo,
   recoverBtcUnsignedFixtures,
-  recoverBtcSegwitFixtures
+  recoverBtcSegwitFixtures,
 } from '../../fixtures/coins/recovery';
 
 describe('Abstract UTXO Coin:', () => {
@@ -400,13 +400,15 @@ describe('Abstract UTXO Coin:', () => {
         needsCustomChangeKeySignatureVerification: false,
       });
 
-      const bitcoinMock = sinon.stub(utxoLib.Transaction, 'fromHex').returns({ ins: [] });
+      const bitcoinMock = sinon.stub(coin, 'createTransactionFromHex').returns({ ins: [] });
 
       await coin.verifyTransaction({
         txParams: {
           walletPassphrase: passphrase,
         },
-        txPrebuild: {},
+        txPrebuild: {
+          txHex: '00',
+        },
         wallet: unsignedSendingWallet as any,
       }).should.eventually.be.true();
 
@@ -433,7 +435,9 @@ describe('Abstract UTXO Coin:', () => {
         txParams: {
           walletPassphrase: passphrase,
         },
-        txPrebuild: {},
+        txPrebuild: {
+          txHex: '00',
+        },
         wallet: unsignedSendingWallet as any,
         verification: {
           allowPaygoOutput: false,
@@ -457,13 +461,15 @@ describe('Abstract UTXO Coin:', () => {
         needsCustomChangeKeySignatureVerification: false,
       });
 
-      const bitcoinMock = sinon.stub(utxoLib.Transaction, 'fromHex').returns({ ins: [] });
+      const bitcoinMock = sinon.stub(coin, 'createTransactionFromHex').returns({ ins: [] });
 
       await coin.verifyTransaction({
         txParams: {
           walletPassphrase: passphrase,
         },
-        txPrebuild: {},
+        txPrebuild: {
+          txHex: '00',
+        },
         wallet: unsignedSendingWallet as any,
         verification: {},
       }).should.eventually.be.true();
@@ -501,7 +507,7 @@ describe('Abstract UTXO Coin:', () => {
       const { params, expectedTxHex } = recoverBtcSegwitFixtures();
       recoveryNocks.nockBtcSegwitRecovery(bitgo);
       const tx = await coin.recover(params);
-      const transaction = utxoLib.Transaction.fromHex(tx.transactionHex);
+      const transaction = utxolib.bitgo.createTransactionFromHex(tx.transactionHex, utxolib.networks.bitcoin);
       transaction.ins.length.should.equal(2);
       transaction.outs.length.should.equal(1);
       transaction.outs[0].value.should.equal(57112);

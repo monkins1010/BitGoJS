@@ -11,12 +11,15 @@
 // Copyright 2014, BitGo, Inc.  All Rights Reserved.
 //
 
-import * as bitcoin from '@bitgo/utxo-lib';
+import * as bip32 from 'bip32';
+import * as utxolib from '@bitgo/utxo-lib';
 import * as Bluebird from 'bluebird';
 import * as _ from 'lodash';
 
 import * as common from './common';
-import { getNetwork, makeRandomKey, hdPath } from './bitcoin';
+import { getNetwork, makeRandomKey } from './bitcoin';
+import { sanitizeLegacyPath } from './bip32path';
+import { getSharedSecret } from './ecdh';
 
 interface DecryptReceivedTravelRuleOptions {
   tx?: {
@@ -32,7 +35,7 @@ interface DecryptReceivedTravelRuleOptions {
   keychain?: {
     xprv?: string;
   };
-  hdnode?: bitcoin.HDNode;
+  hdnode?: utxolib.HDNode;
 }
 
 interface Recipient {
@@ -44,11 +47,11 @@ interface Recipient {
 //
 // Constructor
 //
-const TravelRule = function(bitgo) {
+const TravelRule = function (bitgo) {
   this.bitgo = bitgo;
 };
 
-TravelRule.prototype.url = function(extra) {
+TravelRule.prototype.url = function (extra) {
   extra = extra || '';
   return this.bitgo.url('/travel/' + extra);
 };
@@ -61,7 +64,7 @@ TravelRule.prototype.url = function(extra) {
   * @param callback
   * @returns {*}
   */
-TravelRule.prototype.getRecipients = function(params, callback) {
+TravelRule.prototype.getRecipients = function (params, callback) {
   params = params || {};
   params.txid = params.txid || params.hash;
   common.validateParams(params, ['txid'], [], callback);
@@ -72,7 +75,7 @@ TravelRule.prototype.getRecipients = function(params, callback) {
   ).nodeify(callback);
 };
 
-TravelRule.prototype.validateTravelInfo = function(info) {
+TravelRule.prototype.validateTravelInfo = function (info) {
   const fields = {
     amount: { type: 'number' },
     toAddress: { type: 'string' },
@@ -83,10 +86,10 @@ TravelRule.prototype.validateTravelInfo = function(info) {
     toUserName: { type: 'string' },
     toUserAccount: { type: 'string' },
     toUserAddress: { type: 'string' },
-    extra: { type: 'object' }
+    extra: { type: 'object' },
   };
 
-  _.forEach(fields, function(field: any, fieldName) {
+  _.forEach(fields, function (field: any, fieldName) {
     // No required fields yet -- should there be?
     if (field.required) {
       if (info[fieldName] === undefined) {
@@ -113,11 +116,10 @@ TravelRule.prototype.validateTravelInfo = function(info) {
  * Parameters:
  *   tx: a transaction object
  *   keychain: keychain object (with xprv)
- *   hdnode: a bitcoin.HDNode object (may be provided instead of keychain)
  * Returns:
  *   the tx object, augmented with decrypted travelInfo fields
  */
-TravelRule.prototype.decryptReceivedTravelInfo = function(params: DecryptReceivedTravelRuleOptions = {}) {
+TravelRule.prototype.decryptReceivedTravelInfo = function (params: DecryptReceivedTravelRuleOptions = {}) {
   const tx = params.tx;
   if (!_.isObject(tx)) {
     throw new Error('expecting tx param to be object');
@@ -127,30 +129,19 @@ TravelRule.prototype.decryptReceivedTravelInfo = function(params: DecryptReceive
     return tx;
   }
 
-  let hdNode;
-  // Passing in hdnode is faster because it doesn't reconstruct the key every time
-  if (params.hdnode) {
-    hdNode = params.hdnode;
-  } else {
-    const keychain = params.keychain;
-    if (!_.isObject(keychain) || !_.isString(keychain.xprv)) {
-      throw new Error('expecting keychain param with xprv');
-    }
-    hdNode = bitcoin.HDNode.fromBase58(keychain.xprv);
+  const keychain = params.keychain;
+  if (!_.isObject(keychain) || !_.isString(keychain.xprv)) {
+    throw new Error('expecting keychain param with xprv');
   }
+  const hdNode = bip32.fromBase58(keychain.xprv);
 
-  const self = this;
-  const hdPathNode = hdPath(hdNode);
-  tx.receivedTravelInfo.forEach(function(info) {
-    const key = hdPathNode.deriveKey(info.toPubKeyPath);
-    const secret = self.bitgo.getECDHSecret({
-      eckey: key,
-      otherPubKeyHex: info.fromPubKey
-    });
+  tx.receivedTravelInfo.forEach((info) => {
+    const key = hdNode.derivePath(sanitizeLegacyPath(info.toPubKeyPath));
+    const secret = getSharedSecret(key, Buffer.from(info.fromPubKey, 'hex')).toString('hex');
     try {
       const decrypted = this.bitgo.decrypt({
         input: info.encryptedTravelInfo,
-        password: secret
+        password: secret,
       });
       info.travelInfo = JSON.parse(decrypted);
     } catch (err) {
@@ -161,7 +152,7 @@ TravelRule.prototype.decryptReceivedTravelInfo = function(params: DecryptReceive
   return tx;
 };
 
-TravelRule.prototype.prepareParams = function(params) {
+TravelRule.prototype.prepareParams = function (params) {
   params = params || {};
   params.txid = params.txid || params.hash;
   common.validateParams(params, ['txid'], ['fromPrivateInfo']);
@@ -184,22 +175,19 @@ TravelRule.prototype.prepareParams = function(params) {
   }
 
   // If a key was not provided, create a new random key
-  let fromKey = params.fromKey && bitcoin.ECPair.fromWIF(params.fromKey, getNetwork());
+  let fromKey = params.fromKey && utxolib.ECPair.fromWIF(params.fromKey, getNetwork());
   if (!fromKey) {
     fromKey = makeRandomKey();
   }
 
   // Compute the shared key for encryption
-  const sharedSecret = this.bitgo.getECDHSecret({
-    eckey: fromKey,
-    otherPubKeyHex: recipient.pubKey
-  });
+  const sharedSecret = getSharedSecret(fromKey, Buffer.from(recipient.pubKey, 'hex')).toString('hex');
 
   // JSON-ify and encrypt the payload
   const travelInfoJSON = JSON.stringify(travelInfo);
   const encryptedTravelInfo = this.bitgo.encrypt({
     input: travelInfoJSON,
-    password: sharedSecret
+    password: sharedSecret,
   });
 
   const result = {
@@ -208,7 +196,7 @@ TravelRule.prototype.prepareParams = function(params) {
     toPubKey: recipient.pubKey,
     fromPubKey: fromKey.getPublicKeyBuffer().toString('hex'),
     encryptedTravelInfo: encryptedTravelInfo,
-    fromPrivateInfo: undefined
+    fromPrivateInfo: undefined,
   };
 
   if (params.fromPrivateInfo) {
@@ -221,7 +209,7 @@ TravelRule.prototype.prepareParams = function(params) {
 /**
  * Send travel data to the server for a transaction
  */
-TravelRule.prototype.send = function(params, callback) {
+TravelRule.prototype.send = function (params, callback) {
   params = params || {};
   params.txid = params.txid || params.hash;
   common.validateParams(params, ['txid', 'toPubKey', 'encryptedTravelInfo'], ['fromPubKey', 'fromPrivateInfo'], callback);
@@ -256,7 +244,7 @@ TravelRule.prototype.send = function(params, callback) {
  *  End-to-end encryption of the travel info is handled automatically by this method.
  *
  */
-TravelRule.prototype.sendMany = function(params, callback) {
+TravelRule.prototype.sendMany = function (params, callback) {
   params = params || {};
   params.txid = params.txid || params.hash;
   common.validateParams(params, ['txid'], callback);
@@ -268,39 +256,39 @@ TravelRule.prototype.sendMany = function(params, callback) {
 
   const self = this;
   const travelInfoMap = _(travelInfos)
-  .keyBy('outputIndex')
-  .mapValues(function(travelInfo) {
-    return self.validateTravelInfo(travelInfo);
-  })
-  .value();
+    .keyBy('outputIndex')
+    .mapValues(function (travelInfo) {
+      return self.validateTravelInfo(travelInfo);
+    })
+    .value();
 
   return self.getRecipients({ txid: params.txid })
-  .then(function(recipients) {
+    .then(function (recipients) {
 
-    // Build up data to post
-    const sendParamsList: any[] = [];
-    // don't regenerate a new random key for each recipient
-    const fromKey = params.fromKey || makeRandomKey().toWIF();
+      // Build up data to post
+      const sendParamsList: any[] = [];
+      // don't regenerate a new random key for each recipient
+      const fromKey = params.fromKey || makeRandomKey().toWIF();
 
-    recipients.forEach(function(recipient) {
-      const outputIndex = recipient.outputIndex;
-      const info = travelInfoMap[outputIndex];
-      if (info) {
-        if (info.amount && info.amount !== recipient.amount) {
-          throw new Error('amount did not match for output index ' + outputIndex);
+      recipients.forEach(function (recipient) {
+        const outputIndex = recipient.outputIndex;
+        const info = travelInfoMap[outputIndex];
+        if (info) {
+          if (info.amount && info.amount !== recipient.amount) {
+            throw new Error('amount did not match for output index ' + outputIndex);
+          }
+          const sendParams = self.prepareParams({
+            txid: params.txid,
+            recipient: recipient,
+            travelInfo: info,
+            fromKey: fromKey,
+            noValidate: true, // don't re-validate
+          });
+          sendParamsList.push(sendParams);
         }
-        const sendParams = self.prepareParams({
-          txid: params.txid,
-          recipient: recipient,
-          travelInfo: info,
-          fromKey: fromKey,
-          noValidate: true // don't re-validate
-        });
-        sendParamsList.push(sendParams);
-      }
-    });
+      });
 
-    const result: {
+      const result: {
       matched: number;
       results: {
         result?: any;
@@ -308,27 +296,27 @@ TravelRule.prototype.sendMany = function(params, callback) {
       }[];
     } = {
       matched: sendParamsList.length,
-      results: []
+      results: [],
     };
 
-    const sendSerial = function() {
-      const sendParams = sendParamsList.shift();
-      if (!sendParams) {
-        return result;
-      }
-      return self.send(sendParams)
-      .then(function(res) {
-        result.results.push({ result: res });
-        return sendSerial();
-      })
-      .catch(function(err) {
-        result.results.push({ error: err.toString() });
-        return sendSerial();
-      });
-    };
+      const sendSerial = function () {
+        const sendParams = sendParamsList.shift();
+        if (!sendParams) {
+          return result;
+        }
+        return self.send(sendParams)
+          .then(function (res) {
+            result.results.push({ result: res });
+            return sendSerial();
+          })
+          .catch(function (err) {
+            result.results.push({ error: err.toString() });
+            return sendSerial();
+          });
+      };
 
-    return sendSerial();
-  });
+      return sendSerial();
+    });
 };
 
 module.exports = TravelRule;

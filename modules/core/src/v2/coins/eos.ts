@@ -1,6 +1,7 @@
 /**
  * @prettier
  */
+import * as bip32 from 'bip32';
 import { BitGo } from '../../bitgo';
 import {
   BaseCoin,
@@ -16,7 +17,6 @@ import {
 import { NodeCallback } from '../types';
 import { BigNumber } from 'bignumber.js';
 import { randomBytes } from 'crypto';
-import { HDNode } from '@bitgo/utxo-lib';
 import * as EosJs from 'eosjs';
 import * as ecc from 'eosjs-ecc';
 import * as url from 'url';
@@ -25,9 +25,9 @@ import * as _ from 'lodash';
 import * as Bluebird from 'bluebird';
 const co = Bluebird.coroutine;
 import { InvalidAddressError, UnexpectedAddressError } from '../../errors';
-import * as config from '../../config';
 import { Environments } from '../environments';
 import * as request from 'superagent';
+import { checkKrsProvider, getBip32Keys, getIsKrsRecovery, getIsUnsignedSweep } from '../recovery/initiate';
 
 interface AddressDetails {
   address: string;
@@ -131,13 +131,6 @@ interface RecoveryOptions {
   rootAddress?: string;
 }
 
-interface ValidateKeyOptions {
-  key: string;
-  source: string;
-  passphrase?: string;
-  isUnsignedSweep: boolean;
-  isKrsRecovery: boolean;
-}
 interface VerifyAddressOptions extends BaseVerifyAddressOptions {
   rootAddress: string;
 }
@@ -196,7 +189,7 @@ export class Eos extends BaseCoin {
       // maximum entropy and gives us maximum security against cracking.
       seed = randomBytes(512 / 8);
     }
-    const extendedKey = HDNode.fromSeedBuffer(seed);
+    const extendedKey = bip32.fromSeed(seed);
     const xpub = extendedKey.neutered().toBase58();
     return {
       pub: xpub,
@@ -211,8 +204,7 @@ export class Eos extends BaseCoin {
    */
   isValidPub(pub: string): boolean {
     try {
-      HDNode.fromBase58(pub);
-      return true;
+      return bip32.fromBase58(pub).isNeutered();
     } catch (e) {
       return false;
     }
@@ -225,8 +217,7 @@ export class Eos extends BaseCoin {
    */
   isValidPrv(prv: string): boolean {
     try {
-      HDNode.fromBase58(prv);
-      return true;
+      return !bip32.fromBase58(prv).isNeutered();
     } catch (e) {
       return false;
     }
@@ -401,7 +392,10 @@ export class Eos extends BaseCoin {
       const transaction: EosTx = params.txPrebuild.transaction;
 
       const signBuffer: Buffer = Buffer.from(txHex, 'hex');
-      const privateKeyBuffer: Buffer = HDNode.fromBase58(prv).getKey().getPrivateKeyBuffer();
+      const privateKeyBuffer = bip32.fromBase58(prv).privateKey;
+      if (!privateKeyBuffer) {
+        throw new Error('no privateKey');
+      }
       const signature: string = ecc.Signature.sign(signBuffer, privateKeyBuffer).toString();
 
       transaction.signatures.push(signature);
@@ -607,83 +601,10 @@ export class Eos extends BaseCoin {
   }
 
   /**
-   * Validate a public or private key
-   * If passphrase is provided, try to decrypt the key with it
-   * @param key
-   * @param source
-   * @param passphrase
-   * @param isUnsignedSweep
-   * @param isKrsRecovery
+   * @deprecated
    */
-  validateKey({ key, source, passphrase, isUnsignedSweep, isKrsRecovery }: ValidateKeyOptions): HDNode {
-    if (!key.startsWith('xprv') && !isUnsignedSweep) {
-      // Try to decrypt the key
-      try {
-        if (source === 'user' || (source === 'backup' && !isKrsRecovery)) {
-          return HDNode.fromBase58(this.bitgo.decrypt({ password: passphrase, input: key }));
-        }
-      } catch (e) {
-        throw new Error(`Failed to decrypt ${source} key with passcode - try again!`);
-      }
-    }
-    try {
-      return HDNode.fromBase58(key);
-    } catch (e) {
-      throw new Error(`Failed to validate ${source} key - try again!`);
-    }
-  }
-
-  /**
-   * Prepare and validate all keychains from the keycard for recovery
-   * @param userKey
-   * @param backupKey
-   * @param recoveryDestination
-   * @param krsProvider
-   * @param walletPassphrase
-   */
-  initiateRecovery({
-    userKey,
-    backupKey,
-    recoveryDestination,
-    krsProvider,
-    walletPassphrase,
-  }: RecoveryOptions): Bluebird<HDNode[]> {
-    const self = this;
-    return co<HDNode[]>(function* () {
-      const isKrsRecovery = backupKey.startsWith('xpub') && !userKey.startsWith('xpub');
-      const isUnsignedSweep = backupKey.startsWith('xpub') && userKey.startsWith('xpub');
-
-      if (isKrsRecovery) {
-        if (!krsProvider || _.isUndefined(config.krsProviders[krsProvider])) {
-          throw new Error('unknown key recovery service provider');
-        }
-        const krsProviderConfig = config.krsProviders[krsProvider];
-        if (!krsProviderConfig.supportedCoins.includes(self.getFamily())) {
-          throw new Error('specified key recovery service does not support recoveries for this coin');
-        }
-      }
-
-      const keys = [
-        self.validateKey({
-          key: userKey,
-          source: 'user',
-          passphrase: walletPassphrase,
-          isKrsRecovery,
-          isUnsignedSweep,
-        }),
-        self.validateKey({
-          key: backupKey,
-          source: 'backup',
-          passphrase: walletPassphrase,
-          isKrsRecovery,
-          isUnsignedSweep,
-        }),
-      ];
-      if (!self.isValidAddress(recoveryDestination)) {
-        throw new Error('Invalid destination address!');
-      }
-      return keys;
-    }).call(this);
+  initiateRecovery(params: RecoveryOptions): never {
+    throw new Error('deprecated method');
   }
 
   /**
@@ -800,9 +721,9 @@ export class Eos extends BaseCoin {
    * @param signableTx
    * @param signingKey
    */
-  signTx(signableTx: string, signingKey: HDNode): string {
+  signTx(signableTx: string, signingKey: bip32.BIP32Interface): string {
     const signBuffer = Buffer.from(signableTx, 'hex');
-    const privateKeyBuffer = signingKey.getKey().getPrivateKeyBuffer();
+    const privateKeyBuffer = signingKey.privateKey;
     return ecc.Signature.sign(signBuffer, privateKeyBuffer).toString();
   }
 
@@ -831,10 +752,20 @@ export class Eos extends BaseCoin {
       if (!params.rootAddress) {
         throw new Error('missing required string rootAddress');
       }
-      const isKrsRecovery = params.backupKey.startsWith('xpub') && !params.userKey.startsWith('xpub');
-      const isUnsignedSweep = params.backupKey.startsWith('xpub') && params.userKey.startsWith('xpub');
 
-      const keys = (yield self.initiateRecovery(params)) as any;
+      const isKrsRecovery = getIsKrsRecovery(params);
+      const isUnsignedSweep = getIsUnsignedSweep(params);
+
+      const { krsProvider } = params;
+      if (getIsKrsRecovery(params)) {
+        checkKrsProvider(self, krsProvider);
+      }
+
+      if (!self.isValidAddress(params.recoveryDestination)) {
+        throw new Error('Invalid destination address!');
+      }
+
+      const keys = getBip32Keys(self.bitgo, params, { requireBitGoXpub: false });
 
       const rootAddressDetails = self.getAddressDetails(params.rootAddress);
       const account = (yield self.getAccountFromNode({ address: rootAddressDetails.address })) as any;
@@ -846,8 +777,8 @@ export class Eos extends BaseCoin {
       if (!account.permissions) {
         throw new Error('Could not find permissions for ' + params.rootAddress);
       }
-      const userPub = ecc.PublicKey.fromBuffer(keys[0].getPublicKeyBuffer()).toString();
-      const backupPub = ecc.PublicKey.fromBuffer(keys[1].getPublicKeyBuffer()).toString();
+      const userPub = ecc.PublicKey.fromBuffer(keys[0].publicKey).toString();
+      const backupPub = ecc.PublicKey.fromBuffer(keys[1].publicKey).toString();
 
       const activePermission = _.find(account.permissions, { perm_name: 'active' });
       const requiredAuth = _.get(activePermission, 'required_auth');
@@ -905,6 +836,8 @@ export class Eos extends BaseCoin {
         },
         txid: (transaction as any).transaction_id,
         recoveryAmount: accountBalance,
+        coin: self.getChain(),
+        txHex: '',
       };
       const signableTx = Buffer.concat([
         Buffer.from(self.getChainId(), 'hex'), // The ChainID representing the chain that we are on
@@ -913,6 +846,7 @@ export class Eos extends BaseCoin {
       ]).toString('hex');
 
       if (isUnsignedSweep) {
+        txObject.txHex = signableTx;
         return txObject;
       }
 

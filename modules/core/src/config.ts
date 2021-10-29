@@ -4,7 +4,7 @@ import { OfcTokenConfig } from './v2/coins/ofcToken';
 import { Erc20TokenConfig } from './v2/coins/erc20Token';
 import { StellarTokenConfig } from './v2/coins/stellarToken';
 import { CeloTokenConfig } from './v2/coins/celoToken';
-import { coins, Erc20Coin, StellarCoin, OfcCoin, CeloCoin, CoinKind, NetworkType } from '@bitgo/statics';
+import { coins, Erc20Coin, StellarCoin, OfcCoin, CeloCoin, CoinKind, NetworkType, Networks } from '@bitgo/statics';
 
 export interface Tokens {
   bitcoin: {
@@ -40,9 +40,24 @@ export interface Tokens {
 // Get the list of ERC-20 tokens from statics and format it properly
 const formattedErc20Tokens = coins.reduce((acc: Erc20TokenConfig[], coin) => {
   if (coin instanceof Erc20Coin) {
+    let baseCoin: string;
+    switch (coin.network) {
+      case Networks.main.ethereum:
+        baseCoin = 'eth';
+        break;
+      case Networks.test.kovan:
+        baseCoin = 'teth';
+        break;
+      case Networks.test.goerli:
+        baseCoin = 'gteth';
+        break;
+      default:
+        throw new Error(`Erc20 token ${coin.name} has an unsupported network`);
+    }
+
     acc.push({
       type: coin.name,
-      coin: coin.network.type === NetworkType.MAINNET ? 'eth' : 'teth',
+      coin: baseCoin,
       network: coin.network.type === NetworkType.MAINNET ? 'Mainnet' : 'Testnet',
       name: coin.fullName,
       tokenContractAddress: coin.contractAddress.toString().toLowerCase(),
@@ -141,9 +156,9 @@ export const tokens: Tokens = {
  * Verify mainnet or testnet tokens
  * @param tokens
  */
-const verifyTokens = function(tokens) {
+const verifyTokens = function (tokens) {
   const verifiedTokens = {};
-  _.forEach(tokens, function(token) {
+  _.forEach(tokens, function (token) {
     if (verifiedTokens[token.type]) {
       throw new Error('token : ' + token.type + ' duplicated.');
     }
@@ -172,7 +187,7 @@ export const defaults = {
   fallbackFeeRate: 50000,
   minOutputSize: 2730,
   minInstantFeeRate: 10000,
-  bitgoEthAddress: '0x0f47ea803926926f299b7f1afc8460888d850f47'
+  bitgoEthAddress: '0x0f47ea803926926f299b7f1afc8460888d850f47',
 };
 
 // Supported cross-chain recovery routes. The coin to be recovered is the index, the valid coins for recipient wallets
@@ -181,29 +196,36 @@ export const supportedCrossChainRecoveries = {
   btc: ['bch', 'ltc', 'bsv'],
   bch: ['btc', 'ltc', 'bsv'],
   ltc: ['btc', 'bch', 'bsv'],
-  bsv: ['btc', 'ltc', 'bch']
+  bsv: ['btc', 'ltc', 'bch'],
 };
 
+export type KrsProvider = {
+  feeType: 'flatUsd';
+  feeAmount: number;
+  supportedCoins: string[];
+  feeAddresses?: Record<string, string>
+}
+
 // KRS providers and their fee structures
-export const krsProviders = {
+export const krsProviders: Record<string, KrsProvider> = {
   keyternal: {
     feeType: 'flatUsd',
     feeAmount: 99,
     supportedCoins: ['btc', 'eth'],
     feeAddresses: {
-      btc: '' // TODO [BG-6965] Get address from Keyternal - recovery will fail for now until Keyternal is ready
-    }
+      btc: '', // TODO [BG-6965] Get address from Keyternal - recovery will fail for now until Keyternal is ready
+    },
   },
   bitgoKRSv2: {
     feeType: 'flatUsd',
     feeAmount: 0, // we will receive payments off-chain
-    supportedCoins: ['btc', 'eth']
+    supportedCoins: ['btc', 'eth'],
   },
   dai: {
     feeType: 'flatUsd',
     feeAmount: 0, // dai will receive payments off-chain
-    supportedCoins: ['btc', 'eth', 'xlm', 'xrp', 'dash', 'zec', 'ltc', 'bch', 'bsv', 'bcha']
-  }
+    supportedCoins: ['btc', 'eth', 'xlm', 'xrp', 'dash', 'zec', 'ltc', 'bch', 'bsv', 'bcha'],
+  },
 };
 
 export const coinGeckoBaseUrl = 'https://api.coingecko.com/api/v3/';

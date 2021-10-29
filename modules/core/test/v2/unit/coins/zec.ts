@@ -1,14 +1,14 @@
 import 'should';
 import * as _ from 'lodash';
-import * as bitGoUtxoLib from '@bitgo/utxo-lib';
+import * as utxolib from '@bitgo/utxo-lib';
 
 import { TestBitGo } from '../../../lib/test_bitgo';
 import { Wallet } from '../../../../src/v2/wallet';
 
-describe('ZEC:', function() {
+describe('ZEC:', function () {
   let bitgo;
 
-  before(function() {
+  before(function () {
     bitgo = new TestBitGo({ env: 'test' });
     bitgo.initializeTestVars();
   });
@@ -18,16 +18,16 @@ describe('ZEC:', function() {
     const keychains = [
       {
         pub: 'xpub661MyMwAqRbcGiQhVk1J7cD1YodF9tc5Y1B8vpTjjB1pcB1J1m1QX8fMtYP2sYqFmW6J2ra69tNoARKjvTGo9cGUrbPbJdjwrSzGGzPzWWS',
-        prv: 'xprv9s21ZrQH143K4ELEPiUHkUGGzmnkkRtEAnFY8S48AqUqjNg9UDh9yLLt3FcfATyCjbsMB9JCGHAD8MeBTAK1P7trFppkoswu5ZAsHYASfbk'
+        prv: 'xprv9s21ZrQH143K4ELEPiUHkUGGzmnkkRtEAnFY8S48AqUqjNg9UDh9yLLt3FcfATyCjbsMB9JCGHAD8MeBTAK1P7trFppkoswu5ZAsHYASfbk',
       },
       {
         pub: 'xpub661MyMwAqRbcFzLXuganogQvd7MrefQQqCcJP2ZDumnCdQecf5cw1P1nD5qBz8SNS1yCLSC9VqpNUWnQU3V6qmnPt2r21oXhicQFzPA6Lby',
-        prv: 'xprv9s21ZrQH143K3WG4of3nSYUC55XNFCgZTyghae9cMSFDkcKU7YJgTahJMpdTY9CjCcjgSo2TJ635uUVx176BufUMBFpieKYVJD9J3VvrGRm'
+        prv: 'xprv9s21ZrQH143K3WG4of3nSYUC55XNFCgZTyghae9cMSFDkcKU7YJgTahJMpdTY9CjCcjgSo2TJ635uUVx176BufUMBFpieKYVJD9J3VvrGRm',
       },
       {
         pub: 'xpub661MyMwAqRbcFHpwWrzPB61U2CgBmdD21WNVM1JKUn9rEExkoGE4yafUVFbPSd78vdX8tWcEUQWaALFkU9fUbUM4Cc49DKEJSCYGRnbzCym',
-        prv: 'xprv9s21ZrQH143K2okUQqTNox4jUAqhNAVAeHStYcthvScsMSdcFiupRnLzdxzfJithak5Zs92FQJeeJ9Jiya63KfUNxawuMZDCp2cGT9cdMKs'
-      }
+        prv: 'xprv9s21ZrQH143K2okUQqTNox4jUAqhNAVAeHStYcthvScsMSdcFiupRnLzdxzfJithak5Zs92FQJeeJ9Jiya63KfUNxawuMZDCp2cGT9cdMKs',
+      },
     ];
 
     let coin;
@@ -69,21 +69,6 @@ describe('ZEC:', function() {
         generatedTestAddress.address.should.equal('t2CgWUKFKRaKzPXQF2cooNFtVZR1gTM8xxM');
       });
 
-      it('should generate 3/3 non-segwit address', () => {
-        const generatedAddress = coin.generateAddress({ keychains, threshold: 3 });
-        const generatedTestAddress = testCoin.generateAddress({ keychains, threshold: 3 });
-
-        [generatedAddress, generatedTestAddress].map((currentAddress) => {
-          currentAddress.chain.should.equal(0);
-          currentAddress.index.should.equal(0);
-          currentAddress.coinSpecific.outputScript.should.equal('a91476dce7beb23d0e0d53edf5895716d4c80dce609387');
-          currentAddress.coinSpecific.redeemScript.should.equal('5321037acffd52bb7c39a4ac3d4c01af33ce0367afec45347e332edca63a38d1fb2e472102658831a87322b3583515ca8725841335505755ada53ee133c70a6b4b8d3978702102641ee6557561c9038242cafa7f538070d7646a969bcf6169f9950abfcfefd6b853ae');
-        });
-
-        generatedAddress.address.should.equal('t3VQ7JHECesyxCxq3m5wf1a5g4D4jweEYrd');
-        generatedTestAddress.address.should.equal('t2HPJLxLLXLbKkfQngpwhZCGKAhHuqyqPk4');
-      });
-
       it('should validate pub key', () => {
         const { pub } = coin.keychains().create();
         coin.isValidPub(pub).should.equal(true);
@@ -93,7 +78,7 @@ describe('ZEC:', function() {
     describe('Should test transaction signing', () => {
 
       // TODO(BG-31309): fix this test to not use hard coded tx hex values or update consensus branch id for fixture txs
-      xit('should create local prebuild', async function() {
+      xit('should create local prebuild', async function () {
         const fundingAddress = 't2CgWUKFKRaKzPXQF2cooNFtVZR1gTM8xxM';
         const fundingRedeemScript = '522103dc94182103c93690c2bca3fe013c19c956b940645b11b0a752e0e56b156bf4e22103b5f4aa0348bf339400ed7e16c6e960a4a46a1ea4c4cbe21abf6d0403161dc4f22103706ff6b11a8d9e3d63a455788d5d96738929ca642f1f3d8f9acedb689e759f3753ae';
 
@@ -104,11 +89,11 @@ describe('ZEC:', function() {
           value: 300000000,
           valueString: '300000000',
           blockHeight: 999999999,
-          date: '2018-05-20T01:44:13.713Z'
+          date: '2018-05-20T01:44:13.713Z',
         };
         const [txHash, vout] = unspent.id.split(':');
 
-        const txb = new bitGoUtxoLib.TransactionBuilder(testCoin.network);
+        const txb = utxolib.bitgo.createTransactionBuilderForNetwork(testCoin.network);
         txb.addInput(txHash, parseInt(vout, 16), 0xffffffff);
         txb.addOutput(receiveAddress, unspent.value - 50000);
 
@@ -129,10 +114,10 @@ describe('ZEC:', function() {
                 chain: 1,
                 index: 113,
                 redeemScript: fundingRedeemScript,
-                value: 300000000
-              }
-            ]
-          }
+                value: 300000000,
+              },
+            ],
+          },
         };
 
         // zcash testnet full node commands used with private keys and unspent above to generate test vectors:
@@ -142,9 +127,9 @@ describe('ZEC:', function() {
         const wallet = new Wallet(bitgo, testCoin, {});
         const halfSigned: any = await wallet.signTransaction({
           txPrebuild: prebuild,
-          prv: keychains[0].prv
+          prv: keychains[0].prv,
         });
-        const halfSignedTx = bitGoUtxoLib.Transaction.fromHex(halfSigned.txHex, testCoin.network);
+        const halfSignedTx = utxolib.bitgo.createTransactionFromHex(halfSigned.txHex, testCoin.network);
         halfSignedTx.network.coin.should.equal('zec');
         halfSignedTx.version.should.equal(4);
         halfSignedTx.versionGroupId.should.equal(2301567109);
@@ -158,9 +143,9 @@ describe('ZEC:', function() {
         const fullySigned: any = await wallet.signTransaction({
           txPrebuild: halfSignedPrebuild,
           prv: keychains[2].prv,
-          isLastSignature: true
+          isLastSignature: true,
         });
-        const fullySignedTx = bitGoUtxoLib.Transaction.fromHex(fullySigned.txHex, testCoin.network);
+        const fullySignedTx = utxolib.bitgo.createTransactionFromHex(fullySigned.txHex, testCoin.network);
         fullySignedTx.network.coin.should.equal('zec');
         fullySignedTx.version.should.equal(4);
         fullySignedTx.versionGroupId.should.equal(2301567109);

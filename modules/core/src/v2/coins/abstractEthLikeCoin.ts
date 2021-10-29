@@ -4,8 +4,7 @@
 import { CoinFamily, BaseCoin as StaticsBaseCoin } from '@bitgo/statics';
 import { getBuilder, Eth } from '@bitgo/account-lib';
 import * as Bluebird from 'bluebird';
-import * as bitcoinMessage from 'bitcoinjs-message';
-import * as bitgoUtxoLib from '@bitgo/utxo-lib';
+import * as bip32 from 'bip32';
 import { randomBytes } from 'crypto';
 
 import {
@@ -122,10 +121,7 @@ export abstract class AbstractEthLikeCoin extends BaseCoin {
   }
 
   generateKeyPair(seed?: Buffer): KeyPair {
-    if (!seed) {
-      seed = randomBytes(512 / 8);
-    }
-    const extendedKey = bitgoUtxoLib.HDNode.fromSeedBuffer(seed);
+    const extendedKey = bip32.fromSeed(seed || randomBytes(32));
     const xpub = extendedKey.neutered().toBase58();
 
     return {
@@ -155,7 +151,7 @@ export abstract class AbstractEthLikeCoin extends BaseCoin {
   async signTransaction(
     params: EthSignTransactionOptions,
     callback?: NodeCallback<SignedTransaction>
-  ): Bluebird<SignedEthLikeTransaction> {
+  ): Promise<SignedEthLikeTransaction> {
     const txBuilder = this.getTransactionBuilder();
     txBuilder.from(params.txPrebuild.txHex);
     txBuilder.transfer().key(new Eth.KeyPair({ prv: params.prv }).getKeys().prv!);
@@ -170,14 +166,6 @@ export abstract class AbstractEthLikeCoin extends BaseCoin {
         expiration: params.txPrebuild.expireTime,
       },
     };
-  }
-
-  async signMessage(key: { prv: string }, message: string | Buffer, callback?: NodeCallback<Buffer>): Bluebird<Buffer> {
-    const privateKey = bitgoUtxoLib.HDNode.fromBase58(key.prv).getKey();
-    const privateKeyBuffer = privateKey.d.toBuffer(32);
-    const isCompressed = privateKey.compressed;
-    const prefix = bitgoUtxoLib.networks.bitcoin.messagePrefix;
-    return bitcoinMessage.sign(message, privateKeyBuffer, isCompressed, prefix);
   }
 
   isValidPub(pub: string): boolean {
@@ -211,7 +199,7 @@ export abstract class AbstractEthLikeCoin extends BaseCoin {
   async explainTransaction(
     params: ExplainTransactionOptions,
     callback?: NodeCallback<TransactionExplanation>
-  ): Bluebird<TransactionExplanation> {
+  ): Promise<TransactionExplanation> {
     const txHex = params.txHex || (params.halfSigned && params.halfSigned.txHex);
     if (!txHex || !params.feeInfo) {
       throw new Error('missing explain tx parameters');
@@ -245,7 +233,7 @@ export abstract class AbstractEthLikeCoin extends BaseCoin {
    * Create a new transaction builder for the current chain
    * @return a new transaction builder
    */
-  private getTransactionBuilder(): Eth.TransactionBuilder {
+  protected getTransactionBuilder(): Eth.TransactionBuilder {
     return getBuilder(this.getBaseChain()) as Eth.TransactionBuilder;
   }
 }

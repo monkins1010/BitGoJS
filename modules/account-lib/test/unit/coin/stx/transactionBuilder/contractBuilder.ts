@@ -5,6 +5,8 @@ import { register } from '../../../../../src/index';
 import { TransactionBuilderFactory } from '../../../../../src/coin/stx';
 import * as testData from '../../../../resources/stx/stx';
 import { TransactionType } from '../../../../../src/coin/baseCoin';
+import { bufferCV, noneCV, someCV, standardPrincipalCV, tupleCV, uintCV, intCV } from '@stacks/transactions';
+import { stringifyCv } from '../../../../../src/coin/stx/utils';
 
 describe('Stx Contract call Builder', () => {
   const factory = register('stx', TransactionBuilderFactory);
@@ -90,8 +92,9 @@ describe('Stx Contract call Builder', () => {
     });
 
     it('a signed contract call transaction', async () => {
+      const amount = 123;
       const builder = initTxBuilder();
-      builder.functionArgs([{ type: 'int128', val: '123' }]);
+      builder.functionArgs([{ type: 'int128', val: amount }]);
       builder.sign({ key: testData.TX_SENDER.prv });
       const tx = await builder.build();
 
@@ -101,6 +104,7 @@ describe('Stx Contract call Builder', () => {
       should.deepEqual(txJson.payload.functionName, testData.CONTRACT_FUNCTION_NAME);
       should.deepEqual(txJson.nonce, 0);
       should.deepEqual(txJson.fee.toString(), '180');
+      should.deepEqual(txJson.payload.functionArgs, [stringifyCv(intCV(amount))]);
       should.deepEqual(tx.toBroadcastFormat(), testData.SIGNED_CONTRACT_CALL);
       tx.type.should.equal(TransactionType.ContractCall);
     });
@@ -114,6 +118,7 @@ describe('Stx Contract call Builder', () => {
       should.deepEqual(txJson.payload.functionName, testData.CONTRACT_FUNCTION_NAME);
       should.deepEqual(txJson.nonce, 0);
       should.deepEqual(txJson.fee.toString(), '180');
+      should.deepEqual(txJson.payload.functionArgs, [stringifyCv(intCV('123'))]);
       should.deepEqual(tx.toBroadcastFormat(), testData.SIGNED_CONTRACT_CALL);
       tx.type.should.equal(TransactionType.ContractCall);
       tx.outputs.length.should.equal(1);
@@ -134,7 +139,101 @@ describe('Stx Contract call Builder', () => {
       builder.fromPubKey([testData.pub1, testData.pub2, testData.pub3]);
       builder.numberSignatures(2);
       const tx = await builder.build();
+      JSON.stringify(tx.toJson());
       should.deepEqual(tx.toBroadcastFormat(), testData.MULTI_SIG_CONTRACT_CALL);
+    });
+
+    describe('ParseCV test', () => {
+      it('Optional with out value', () => {
+        const amount = '400000000';
+        const builder = initTxBuilder();
+        builder.functionArgs([
+          { type: 'uint128', val: amount },
+          { type: 'principal', val: testData.ACCOUNT_2.address },
+          { type: 'optional' },
+          {
+            type: 'optional',
+            val: {
+              type: 'tuple',
+              val: [
+                { key: 'hashbytes', type: 'buffer', val: Buffer.from('some-hash') },
+                { key: 'version', type: 'buffer', val: new BigNum(1).toBuffer() },
+              ],
+            },
+          },
+        ]);
+        should.deepEqual((builder as any)._functionArgs, [
+          uintCV(amount),
+          standardPrincipalCV(testData.ACCOUNT_2.address),
+          noneCV(),
+          someCV(
+            tupleCV({
+              hashbytes: bufferCV(Buffer.from('some-hash')),
+              version: bufferCV(new BigNum(1).toBuffer()),
+            }),
+          ),
+        ]);
+      });
+
+      it('use ClarityValue', () => {
+        const amount = '400000000';
+        const builder = initTxBuilder();
+        builder.functionArgs([
+          uintCV(amount),
+          standardPrincipalCV(testData.ACCOUNT_2.address),
+          noneCV(),
+          someCV(
+            tupleCV({
+              hashbytes: bufferCV(Buffer.from('some-hash')),
+              version: bufferCV(new BigNum(1).toBuffer()),
+            }),
+          ),
+        ]);
+        should.deepEqual((builder as any)._functionArgs, [
+          uintCV(amount),
+          standardPrincipalCV(testData.ACCOUNT_2.address),
+          noneCV(),
+          someCV(
+            tupleCV({
+              hashbytes: bufferCV(Buffer.from('some-hash')),
+              version: bufferCV(new BigNum(1).toBuffer()),
+            }),
+          ),
+        ]);
+      });
+
+      it('Buffer as string', () => {
+        const builder = initTxBuilder();
+        builder.functionArgs([
+          { type: 'buffer', val: 'some-hash' },
+          { type: 'buffer', val: '1' },
+        ]);
+        should.deepEqual((builder as any)._functionArgs, [
+          bufferCV(Buffer.from('some-hash')),
+          bufferCV(new BigNum(1).toBuffer()),
+        ]);
+      });
+
+      it('Buffer as number', () => {
+        const builder = initTxBuilder();
+        builder.functionArgs([
+          { type: 'buffer', val: '1' },
+          { type: 'buffer', val: 1 },
+        ]);
+        should.deepEqual((builder as any)._functionArgs, [
+          bufferCV(new BigNum(1).toBuffer()),
+          bufferCV(new BigNum(1).toBuffer()),
+        ]);
+      });
+
+      it('invalid type', () => {
+        const builder = initTxBuilder();
+
+        should.throws(
+          () => builder.functionArgs([{ type: 'unknow', val: 'any-val' }]),
+          (e) => e.message === 'Unexpected Clarity ABI type primitive: "unknow"',
+        );
+      });
     });
 
     describe('should fail', () => {

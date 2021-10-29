@@ -48,7 +48,6 @@ export abstract class TransactionBuilder extends BaseTransactionBuilder {
     const deployParams = this.getDeployParams();
     const session = this.getSession();
 
-    // @ts-ignore Added because standardPayment expect an external library BigNumber implementation.
     const payment = DeployUtil.standardPayment(_.parseInt(this._fee.gasLimit));
 
     let cTransaction = this.transaction.casperTx || DeployUtil.makeDeploy(deployParams, session, payment);
@@ -255,7 +254,7 @@ export abstract class TransactionBuilder extends BaseTransactionBuilder {
    * @param {BaseKey} key - The key to check
    */
   private checkDuplicatedKeys(key: BaseKey) {
-    this._multiSignerKeyPairs.forEach(_sourceKeyPair => {
+    this._multiSignerKeyPairs.forEach((_sourceKeyPair) => {
       if (_sourceKeyPair.getKeys().prv === key.key) {
         throw new SigningError('Repeated sign: ' + key.key);
       }
@@ -330,7 +329,10 @@ export abstract class TransactionBuilder extends BaseTransactionBuilder {
       case TransactionType.StakingLock:
       case TransactionType.StakingUnlock:
         const moduleBytesSession = this._session as CasperModuleBytesTransaction;
-        session = DeployUtil.ExecutableDeployItem.newModuleBytes(moduleBytesSession.moduleBytes, moduleBytesSession.args);
+        session = DeployUtil.ExecutableDeployItem.newModuleBytes(
+          moduleBytesSession.moduleBytes,
+          moduleBytesSession.args,
+        );
         break;
       default:
         throw new BuildTransactionError('Transaction Type error');
@@ -347,7 +349,7 @@ export abstract class TransactionBuilder extends BaseTransactionBuilder {
    */
   private isTransactionSignedByPub(pub: string): boolean {
     return (
-      _.findIndex(this.transaction.casperTx.approvals, approval => {
+      _.findIndex(this.transaction.casperTx.approvals, (approval) => {
         const approvalSigner = removeAlgoPrefixFromHexValue(approval.signer);
         return approvalSigner === pub;
       }) !== -1

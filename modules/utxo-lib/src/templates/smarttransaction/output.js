@@ -78,7 +78,7 @@ class VerusIdentity
     return 5
   }
 
-  get IdVersionFromSolution(SolVer)
+  IdVersionFromSolution(SolVer)
   {
     if (SolVer < PBaaSVer())
     {

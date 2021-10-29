@@ -1,6 +1,10 @@
-import { Codes, VirtualSizes } from '@bitgo/unspents';
+/**
+ * @prettier
+ */
+import * as bip32 from 'bip32';
+import { Codes } from '@bitgo/unspents';
 import { UnspentType } from '@bitgo/unspents/dist/codes';
-import * as bitcoin from '@bitgo/utxo-lib';
+import * as utxolib from '@bitgo/utxo-lib';
 import * as bitcoinMessage from 'bitcoinjs-message';
 import * as Bluebird from 'bluebird';
 import { randomBytes } from 'crypto';
@@ -8,10 +12,12 @@ import * as debugLib from 'debug';
 import * as _ from 'lodash';
 import * as request from 'superagent';
 
-import { deriveKeyByPath, hdPath } from '../../bitcoin';
 import { BitGo } from '../../bitgo';
 import * as config from '../../config';
 import * as errors from '../../errors';
+
+import { recover, RecoverParams } from './utxo/recover';
+export { RecoverParams } from './utxo/recover';
 
 import {
   AddressCoinSpecific,
@@ -41,6 +47,7 @@ import { CrossChainRecoveryTool } from '../recovery';
 import { NodeCallback } from '../types';
 import { Wallet } from '../wallet';
 import { toBitgoRequest } from '../../api';
+import { sanitizeLegacyPath } from '../../bip32path';
 
 const debug = debugLib('bitgo:v2:utxo');
 const co = Bluebird.coroutine;
@@ -60,27 +67,30 @@ export interface Output {
 export interface TransactionFee {
   fee: number;
   feeRate?: number;
-  size: number
+  size: number;
 }
 
 export interface TransactionExplanation {
   displayOrder: string[];
   id: string;
-  outputs: Output[],
-  changeOutputs: Output[],
+  outputs: Output[];
+  changeOutputs: Output[];
   outputAmount: string;
   changeAmount: number;
   fee: TransactionFee;
+
+  inputSignatures: number[];
+  signatures: number | false;
 }
 
 export interface Unspent {
-  id: string,
-  value: string,
+  id: string;
+  value: number;
 }
 
 export interface ExplainTransactionOptions {
   txHex: string;
-  txInfo?: { changeAddresses: string[], unspents: Unspent[] };
+  txInfo?: { changeAddresses?: string[]; unspents: Unspent[] };
   feeInfo?: string;
 }
 
@@ -89,14 +99,11 @@ export interface UtxoNetwork {
   scriptHash: number;
   altScriptHash?: number;
   bech32: string;
-}
-
-export interface ParsedSignatureScript {
-  isSegwitInput: boolean;
-  inputClassification: string;
-  signatures?: Buffer[];
-  publicKeys?: Buffer[];
-  pubScript?: Buffer;
+  wif: number;
+  bip32: {
+    public: number;
+    private: number;
+  };
 }
 
 export interface TransactionPrebuild extends BaseTransactionPrebuild {
@@ -108,7 +115,6 @@ export interface TransactionParams extends BaseTransactionParams {
   walletPassphrase?: string;
   changeAddress?: string;
 }
-
 
 export interface ParseTransactionOptions extends BaseParseTransactionOptions {
   txParams: TransactionParams;
@@ -173,7 +179,7 @@ export interface SignTransactionOptions extends BaseSignTransactionOptions {
         redeemScript?: string;
         witnessScript?: string;
       }[];
-    }
+    };
   };
   prv: string;
   isLastSignature?: boolean;
@@ -225,19 +231,6 @@ export interface UnspentInfo {
   address: string;
 }
 
-export interface RecoverParams {
-  scan?: number;
-  userKey: string;
-  backupKey: string;
-  recoveryDestination: string;
-  krsProvider: string;
-  ignoreAddressTypes: string[];
-  bitgoKey: string;
-  walletPassphrase?: string;
-  apiKey?: string;
-  userKeyPath?: string;
-}
-
 export interface VerifyKeySignaturesOptions {
   userKeychain?: Keychain;
   keychainToVerify?: Keychain;
@@ -281,9 +274,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     // https://github.com/Microsoft/TypeScript/issues/17198#issuecomment-423836658
     // this is a typescript rough corner for sure
     const unspentTypeKeys: string[] = Object.keys(UnspentType);
-    const unspentTypes: UnspentType[] = unspentTypeKeys
-      .map(k => UnspentType[k as any])
-      .map(v => v as UnspentType);
+    const unspentTypes: UnspentType[] = unspentTypeKeys.map((k) => UnspentType[k as any]).map((v) => v as UnspentType);
     for (const addressType of unspentTypes) {
       try {
         Codes.forType(addressType);
@@ -305,10 +296,10 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
   }
 
   /**
-   * Get an instance of the library which can be used to perform low-level operations for this coin
+   * @deprecated
    */
   getCoinLibrary() {
-    return bitcoin;
+    return utxolib;
   }
 
   /**
@@ -317,7 +308,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
   protected getAddressVersion(address: string): number | undefined {
     // try decoding as base58 first
     try {
-      const { version } = this.getCoinLibrary().address.fromBase58Check(address);
+      const { version } = utxolib.address.fromBase58Check(address);
       return version;
     } catch (e) {
       // if that fails, and we aren't supporting p2wsh, then we are done and did not find a version
@@ -328,7 +319,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
 
     // otherwise, try decoding as bech32
     try {
-      const { version, prefix } = this.getCoinLibrary().address.fromBech32(address);
+      const { version, prefix } = utxolib.address.fromBech32(address);
       if (_.isString(this.network.bech32) && prefix === this.network.bech32) {
         return version;
       }
@@ -343,7 +334,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
   protected getAddressPrefix(address: string): string | undefined {
     // otherwise, try decoding as bech32
     try {
-      const { prefix } = this.getCoinLibrary().address.fromBech32(address);
+      const { prefix } = utxolib.address.fromBech32(address);
       return prefix;
     } catch (e) {
       // ignore errors, just fall through and return undefined
@@ -356,10 +347,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param forceAltScriptSupport
    */
   isValidAddress(address: string, forceAltScriptSupport = false): boolean {
-    const validVersions = [
-      this.network.pubKeyHash,
-      this.network.scriptHash,
-    ];
+    const validVersions = [this.network.pubKeyHash, this.network.scriptHash];
     if (this.altScriptHash && (forceAltScriptSupport || this.supportAltScriptDestination)) {
       validVersions.push(this.altScriptHash);
     }
@@ -375,7 +363,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     }
 
     // address has a potential bech32 prefix, validate that
-    return _.isString(this.network.bech32) && this.network.bech32 === addressPrefix;
+    return (
+      _.isString(this.network.bech32) && this.network.bech32 === addressPrefix && address === address.toLowerCase()
+    );
   }
 
   /**
@@ -386,8 +376,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   isValidPub(pub: string) {
     try {
-      bitcoin.HDNode.fromBase58(pub);
-      return true;
+      return bip32.fromBase58(pub).isNeutered();
     } catch (e) {
       return false;
     }
@@ -400,13 +389,15 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   getLatestBlockHeight(reqId?: RequestTracer, callback?: NodeCallback<number>): Bluebird<number> {
     const self = this;
-    return co<number>(function *() {
+    return co<number>(function* () {
       if (reqId) {
         this.bitgo._reqId = reqId;
       }
       const chainhead = yield self.bitgo.get(self.url('/public/block/latest')).result();
       return (chainhead as any).height;
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -414,13 +405,16 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param prebuild
    * @param callback
    */
-  postProcessPrebuild(prebuild: TransactionPrebuild, callback?: NodeCallback<TransactionPrebuild>): Bluebird<TransactionPrebuild> {
+  postProcessPrebuild(
+    prebuild: TransactionPrebuild,
+    callback?: NodeCallback<TransactionPrebuild>
+  ): Bluebird<TransactionPrebuild> {
     const self = this;
-    return co<TransactionPrebuild>(function *(): any {
+    return co<TransactionPrebuild>(function* (): any {
       if (_.isUndefined(prebuild.txHex)) {
         throw new Error('missing required txPrebuild property txHex');
       }
-      const transaction = bitcoin.Transaction.fromHex(prebuild.txHex, self.network);
+      const transaction = self.createTransactionFromHex(prebuild.txHex);
       if (_.isUndefined(prebuild.blockHeight)) {
         prebuild.blockHeight = (yield self.getLatestBlockHeight()) as number;
       }
@@ -428,7 +422,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       // See: https://github.com/bitcoin/bitcoin/blob/fb0ac482eee761ec17ed2c11df11e054347a026d/src/wallet/wallet.cpp#L2133
       transaction.locktime = prebuild.blockHeight;
       return _.extend({}, prebuild, { txHex: transaction.toHex() });
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -457,7 +453,10 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   static inferAddressType(addressDetails: { coinSpecific: AddressCoinSpecific }): string | null {
     if (_.isObject(addressDetails.coinSpecific)) {
-      if (_.isString(addressDetails.coinSpecific.redeemScript) && _.isString(addressDetails.coinSpecific.witnessScript)) {
+      if (
+        _.isString(addressDetails.coinSpecific.redeemScript) &&
+        _.isString(addressDetails.coinSpecific.witnessScript)
+      ) {
         return Codes.UnspentTypeTcomb('p2shP2wsh');
       } else if (_.isString(addressDetails.coinSpecific.redeemScript)) {
         return Codes.UnspentTypeTcomb('p2sh');
@@ -468,22 +467,23 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     return null;
   }
 
+  createTransactionFromHex(hex: string) {
+    return utxolib.bitgo.createTransactionFromHex(hex, this.network);
+  }
+
   /**
    * Extract and fill transaction details such as internal/change spend, external spend (explicit vs. implicit), etc.
    * @param params
    * @param callback
    * @returns {*}
    */
-  parseTransaction(params: ParseTransactionOptions, callback?: NodeCallback<ParsedTransaction>): Bluebird<ParsedTransaction> {
+  parseTransaction(
+    params: ParseTransactionOptions,
+    callback?: NodeCallback<ParsedTransaction>
+  ): Bluebird<ParsedTransaction> {
     const self = this;
-    return co<ParsedTransaction>(function *(): any {
-      const {
-        txParams,
-        txPrebuild,
-        wallet,
-        verification = {},
-        reqId,
-      } = params;
+    return co<ParsedTransaction>(function* (): any {
+      const { txParams, txPrebuild, wallet, verification = {}, reqId } = params;
 
       if (!_.isUndefined(verification.disableNetworking) && !_.isBoolean(verification.disableNetworking)) {
         throw new Error('verification.disableNetworking must be a boolean');
@@ -543,12 +543,20 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         if (!customChangeKeys) {
           throw new Error('failed to fetch keychains for custom change wallet');
         }
-        const customChangeKeychains: [Keychain, Keychain, Keychain] = [customChangeKeys.user, customChangeKeys.backup, customChangeKeys.bitgo];
+        const customChangeKeychains: [Keychain, Keychain, Keychain] = [
+          customChangeKeys.user,
+          customChangeKeys.backup,
+          customChangeKeys.bitgo,
+        ];
 
         if (customChangeKeychains && customChangeWallet) {
           customChange = {
             keys: customChangeKeychains,
-            signatures: [customChangeKeySignatures.user, customChangeKeySignatures.backup, customChangeKeySignatures.bitgo],
+            signatures: [
+              customChangeKeySignatures.user,
+              customChangeKeySignatures.backup,
+              customChangeKeySignatures.bitgo,
+            ],
           };
         }
       }
@@ -571,7 +579,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         });
       });
 
-      const needsCustomChangeKeySignatureVerification = allOutputDetails.some((output) => output.needsCustomChangeKeySignatureVerification);
+      const needsCustomChangeKeySignatureVerification = allOutputDetails.some(
+        (output) => output.needsCustomChangeKeySignatureVerification
+      );
 
       const changeOutputs = _.filter(allOutputDetails, { external: false });
 
@@ -614,7 +624,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         customChange,
       };
       return result;
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -644,7 +656,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       }
     }
 
-    if (_.isEmpty(userPrv)) {
+    if (!userPrv) {
       const errorMessage = 'user private key unavailable for verification';
       if (disableNetworking) {
         console.log(errorMessage);
@@ -653,7 +665,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         throw new Error(errorMessage);
       }
     } else {
-      const userPrivateKey = bitcoin.HDNode.fromBase58(userPrv);
+      const userPrivateKey = bip32.fromBase58(userPrv);
       if (userPrivateKey.toBase58() === userPrivateKey.neutered().toBase58()) {
         throw new Error('user private key is only public');
       }
@@ -688,7 +700,11 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     }
 
     // verify the signature against the user public key
-    const signingAddress = bitcoin.HDNode.fromBase58(userKeychain.pub).keyPair.getAddress();
+    const publicKey = bip32.fromBase58(userKeychain.pub).publicKey;
+    const signingAddress = utxolib.address.toBase58Check(
+      utxolib.crypto.hash160(publicKey),
+      utxolib.networks.bitcoin.pubKeyHash
+    );
 
     // BG-5703: use BTC mainnet prefix for all key signature operations
     // (this means do not pass a prefix parameter, and let it use the default prefix instead)
@@ -766,10 +782,16 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   verifyTransaction(params: VerifyTransactionOptions, callback?: NodeCallback<boolean>): Bluebird<boolean> {
     const self = this;
-    return co<boolean>(function *(): any {
+    return co<boolean>(function* (): any {
       const { txParams, txPrebuild, wallet, verification = { allowPaygoOutput: true }, reqId } = params;
       const disableNetworking = !!verification.disableNetworking;
-      const parsedTransaction: ParsedTransaction = yield self.parseTransaction({ txParams, txPrebuild, wallet, verification, reqId });
+      const parsedTransaction: ParsedTransaction = yield self.parseTransaction({
+        txParams,
+        txPrebuild,
+        wallet,
+        verification,
+        reqId,
+      });
 
       const keychains = parsedTransaction.keychains;
 
@@ -785,7 +807,8 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       // let's verify these keychains
       const keySignatures = parsedTransaction.keySignatures;
       if (!_.isEmpty(keySignatures)) {
-        const verify = (key, pub) => self.verifyKeySignature({ userKeychain: keychains.user, keychainToVerify: key, keySignature: pub });
+        const verify = (key, pub) =>
+          self.verifyKeySignature({ userKeychain: keychains.user, keychainToVerify: key, keySignature: pub });
         const isBackupKeySignatureValid = verify(keychains.backup, keySignatures.backupPub);
         const isBitgoKeySignatureValid = verify(keychains.bitgo, keySignatures.bitgoPub);
         if (!isBackupKeySignatureValid || !isBitgoKeySignatureValid) {
@@ -802,9 +825,14 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         if (!keychains.user || !userPublicKeyVerified) {
           throw new Error('transaction requires verification of user public key, but it was unable to be verified');
         }
-        const customChangeKeySignaturesVerified = self.verifyCustomChangeKeySignatures(parsedTransaction, keychains.user);
+        const customChangeKeySignaturesVerified = self.verifyCustomChangeKeySignatures(
+          parsedTransaction,
+          keychains.user
+        );
         if (!customChangeKeySignaturesVerified) {
-          throw new Error('transaction requires verification of custom change key signatures, but they were unable to be verified');
+          throw new Error(
+            'transaction requires verification of custom change key signatures, but they were unable to be verified'
+          );
         }
         debug('successfully verified user public key and custom change key signatures');
       }
@@ -832,7 +860,12 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       // get all the additional external outputs the server added and calculate their values
       const nonChangeAmount = parsedTransaction.implicitExternalSpendAmount;
 
-      debug('Intended spend is %s, Non-change amount is %s, paygo limit is %s', intendedExternalSpend, nonChangeAmount, payAsYouGoLimit);
+      debug(
+        'Intended spend is %s, Non-change amount is %s, paygo limit is %s',
+        intendedExternalSpend,
+        nonChangeAmount,
+        payAsYouGoLimit
+      );
 
       // the additional external outputs can only be BitGo's pay-as-you-go fee, but we cannot verify the wallet address
       if (nonChangeAmount > payAsYouGoLimit) {
@@ -841,45 +874,55 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       }
 
       const allOutputs = parsedTransaction.outputs;
-      const transaction = bitcoin.Transaction.fromHex(txPrebuild.txHex, self.network);
+      if (!txPrebuild.txHex) {
+        throw new Error(`txPrebuild.txHex not set`);
+      }
+      const transaction = self.createTransactionFromHex(txPrebuild.txHex);
       const transactionCache = {};
-      const inputs = yield Bluebird.map(transaction.ins, co(function *(currentInput) {
-        const transactionId = (Buffer.from(currentInput.hash).reverse() as Buffer).toString('hex');
-        const txHex = _.get(txPrebuild, `txInfo.txHexes.${transactionId}`);
-        if (txHex) {
-          const localTx = bitcoin.Transaction.fromHex(txHex, self.network);
-          if (localTx.getId() !== transactionId) {
-            throw new Error('input transaction hex does not match id');
+      const inputs = yield Bluebird.map(
+        transaction.ins,
+        co(function* (currentInput) {
+          const transactionId = (Buffer.from(currentInput.hash).reverse() as Buffer).toString('hex');
+          const txHex = _.get(txPrebuild, `txInfo.txHexes.${transactionId}`);
+          if (txHex) {
+            const localTx = self.createTransactionFromHex(txHex);
+            if (localTx.getId() !== transactionId) {
+              throw new Error('input transaction hex does not match id');
+            }
+            const currentOutput = localTx.outs[currentInput.index];
+            const address = utxolib.address.fromOutputScript(currentOutput.script, self.network);
+            return {
+              address,
+              value: currentOutput.value,
+            };
+          } else if (!transactionCache[transactionId]) {
+            if (disableNetworking) {
+              throw new Error('attempting to retrieve transaction details externally with networking disabled');
+            }
+            if (reqId) {
+              self.bitgo.setRequestTracer(reqId);
+            }
+            transactionCache[transactionId] = yield self.bitgo.get(self.url(`/public/tx/${transactionId}`)).result();
           }
-          const currentOutput = localTx.outs[currentInput.index];
-          const address = bitcoin.address.fromOutputScript(currentOutput.script, self.network);
-          return {
-            address,
-            value: currentOutput.value,
-          };
-        } else if (!transactionCache[transactionId]) {
-          if (disableNetworking) {
-            throw new Error('attempting to retrieve transaction details externally with networking disabled');
-          }
-          if (reqId) {
-            self.bitgo.setRequestTracer(reqId);
-          }
-          transactionCache[transactionId] = yield self.bitgo.get(self.url(`/public/tx/${transactionId}`)).result();
-        }
-        const transactionDetails = transactionCache[transactionId];
-        return transactionDetails.outputs[currentInput.index];
-      }).bind(this));
+          const transactionDetails = transactionCache[transactionId];
+          return transactionDetails.outputs[currentInput.index];
+        }).bind(this)
+      );
 
       const inputAmount = _.sumBy(inputs, 'value');
       const outputAmount = _.sumBy(allOutputs, 'amount');
       const fee = inputAmount - outputAmount;
 
       if (fee < 0) {
-        throw new Error(`attempting to spend ${outputAmount} satoshis, which exceeds the input amount (${inputAmount} satoshis) by ${-fee}`);
+        throw new Error(
+          `attempting to spend ${outputAmount} satoshis, which exceeds the input amount (${inputAmount} satoshis) by ${-fee}`
+        );
       }
 
       return true;
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -901,12 +944,16 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       throw new errors.InvalidAddressError(`invalid address: ${address}`);
     }
 
-    if ((_.isUndefined(chain) && _.isUndefined(index)) || (!(_.isFinite(chain) && _.isFinite(index)))) {
-      throw new errors.InvalidAddressDerivationPropertyError(`address validation failure: invalid chain (${chain}) or index (${index})`);
+    if ((_.isUndefined(chain) && _.isUndefined(index)) || !(_.isFinite(chain) && _.isFinite(index))) {
+      throw new errors.InvalidAddressDerivationPropertyError(
+        `address validation failure: invalid chain (${chain}) or index (${index})`
+      );
     }
 
     if (!_.isObject(coinSpecific)) {
-      throw new errors.InvalidAddressVerificationObjectPropertyError('address validation failure: coinSpecific field must be an object');
+      throw new errors.InvalidAddressVerificationObjectPropertyError(
+        'address validation failure: coinSpecific field must be an object'
+      );
     }
 
     if (!keychains) {
@@ -922,7 +969,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     });
 
     if (expectedAddress.address !== address) {
-      throw new errors.UnexpectedAddressError(`address validation failure: expected ${expectedAddress.address} but got ${address}`);
+      throw new errors.UnexpectedAddressError(
+        `address validation failure: expected ${expectedAddress.address} but got ${address}`
+      );
     }
 
     return true;
@@ -1028,12 +1077,15 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       derivationIndex = index;
     }
 
-    const path = 'm/0/0/' + derivationChain + '/' + derivationIndex;
-    const hdNodes = keychains.map(({ pub }) => bitcoin.HDNode.fromBase58(pub));
-    const derivedKeys = hdNodes.map(hdNode => hdPath(hdNode).deriveKey(path).getPublicKeyBuffer());
+    const path = '0/0/' + derivationChain + '/' + derivationIndex;
+    const hdNodes = keychains.map(({ pub }) => bip32.fromBase58(pub));
+    const derivedKeys = hdNodes.map((hdNode) => hdNode.derivePath(sanitizeLegacyPath(path)).publicKey);
 
-    const { outputScript, redeemScript, witnessScript, address } =
-      this.createMultiSigAddress(addressType, signatureThreshold, derivedKeys);
+    const { outputScript, redeemScript, witnessScript, address } = this.createMultiSigAddress(
+      addressType,
+      signatureThreshold,
+      derivedKeys
+    );
 
     return {
       address,
@@ -1058,9 +1110,12 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param callback
    * @returns {Bluebird<SignedTransaction>}
    */
-  signTransaction(params: SignTransactionOptions, callback?: NodeCallback<SignedTransaction>): Bluebird<SignedTransaction> {
+  signTransaction(
+    params: SignTransactionOptions,
+    callback?: NodeCallback<SignedTransaction>
+  ): Bluebird<SignedTransaction> {
     const self = this;
-    return co<SignedTransaction>(function *() {
+    return co<SignedTransaction>(function* () {
       const txPrebuild = params.txPrebuild;
       const userPrv = params.prv;
 
@@ -1070,7 +1125,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         }
         throw new Error('missing txPrebuild parameter');
       }
-      let transaction = bitcoin.Transaction.fromHex(txPrebuild.txHex, self.network);
+      let transaction = self.createTransactionFromHex(txPrebuild.txHex);
 
       if (transaction.ins.length !== txPrebuild.txInfo.unspents.length) {
         throw new Error('length of unspents array should equal to the number of transaction inputs');
@@ -1089,15 +1144,16 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         throw new Error('missing prv parameter to sign transaction');
       }
 
-      const keychain = bitcoin.HDNode.fromBase58(userPrv);
+      // We won't pass `self.network` to `fromBase58()` because BitGo encodes bip32 keys for all
+      // utxo coins using the bitcoin mainnet parameters.
+      const keychain = Object.assign(bip32.fromBase58(userPrv, utxolib.networks.bitcoin), { network: self.network });
 
-      if (keychain.toBase58() === keychain.neutered().toBase58()) {
+      if (keychain.isNeutered()) {
         throw new Error('expected user private key but received public key');
       }
       debug(`Here is the public key of the xprv you used to sign: ${keychain.neutered().toBase58()}`);
 
-      const keychainHdPath = hdPath(keychain);
-      const txb = bitcoin.TransactionBuilder.fromTransaction(transaction, self.network);
+      const txb = utxolib.bitgo.createTransactionBuilderFromTransaction(transaction, self.network);
       self.prepareTransactionBuilder(txb);
 
       const getSignatureContext = (txPrebuild: TransactionPrebuild, index: number) => {
@@ -1105,7 +1161,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         return {
           inputIndex: index,
           unspent: currentUnspent,
-          path: 'm/0/0/' + currentUnspent.chain + '/' + currentUnspent.index,
+          path: '0/0/' + currentUnspent.chain + '/' + currentUnspent.index,
           isP2wsh: !currentUnspent.redeemScript,
           isBitGoTaintedUnspent: self.isBitGoTaintedUnspent(currentUnspent),
           error: undefined as Error | undefined,
@@ -1120,12 +1176,13 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         if (signatureContext.isBitGoTaintedUnspent) {
           debug(
             'Skipping input %d of %d (unspent from replay protection address which is platform signed only)',
-            index + 1, transaction.ins.length
+            index + 1,
+            transaction.ins.length
           );
           continue;
         }
-        const privKey = keychainHdPath.deriveKey(signatureContext.path);
-        privKey.network = self.network;
+
+        const keyPair = keychain.derivePath(sanitizeLegacyPath(signatureContext.path));
 
         debug('Input details: %O', signatureContext);
 
@@ -1134,22 +1191,21 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
           if (signatureContext.isP2wsh) {
             debug('Signing p2wsh input');
             const witnessScript = Buffer.from(signatureContext.unspent.witnessScript, 'hex');
-            const witnessScriptHash = bitcoin.crypto.sha256(witnessScript);
-            const prevOutScript = bitcoin.script.witnessScriptHash.output.encode(witnessScriptHash);
-            txb.sign(index, privKey, prevOutScript, sigHashType, signatureContext.unspent.value, witnessScript);
+            const witnessScriptHash = utxolib.crypto.sha256(witnessScript);
+            const prevOutScript = utxolib.script.witnessScriptHash.output.encode(witnessScriptHash);
+            txb.sign(index, keyPair, prevOutScript, sigHashType, signatureContext.unspent.value, witnessScript);
           } else {
             const subscript = Buffer.from(signatureContext.unspent.redeemScript, 'hex');
             const isP2shP2wsh = !!signatureContext.unspent.witnessScript;
             if (isP2shP2wsh) {
               debug('Signing p2shP2wsh input');
               const witnessScript = Buffer.from(signatureContext.unspent.witnessScript, 'hex');
-              txb.sign(index, privKey, subscript, sigHashType, signatureContext.unspent.value, witnessScript);
+              txb.sign(index, keyPair, subscript, sigHashType, signatureContext.unspent.value, witnessScript);
             } else {
               debug('Signing p2sh input');
-              txb.sign(index, privKey, subscript, sigHashType, signatureContext.unspent.value);
+              txb.sign(index, keyPair, subscript, sigHashType, signatureContext.unspent.value);
             }
           }
-
         } catch (e) {
           debug('Failed to sign input:', e);
           signatureContext.error = e;
@@ -1172,7 +1228,8 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         if (signatureContext.isBitGoTaintedUnspent) {
           debug(
             'Skipping input signature %d of %d (unspent from replay protection address which is platform signed only)',
-            index + 1, transaction.ins.length
+            index + 1,
+            transaction.ins.length
           );
           continue;
         }
@@ -1181,7 +1238,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
           transaction.setInputScript(index, Buffer.alloc(0));
         }
 
-        const isValidSignature = self.verifySignature(transaction, index, signatureContext.unspent.value);
+        const isValidSignature = utxolib.bitgo.verifySignature(transaction, index, signatureContext.unspent.value);
         if (!isValidSignature) {
           debug('Invalid signature');
           signatureContext.error = new Error('invalid signature');
@@ -1190,7 +1247,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       }
 
       if (signatureIssues.length > 0) {
-        const failedIndices = signatureIssues.map(currentIssue => currentIssue.inputIndex);
+        const failedIndices = signatureIssues.map((currentIssue) => currentIssue.inputIndex);
         const error: any = new Error(`Failed to sign inputs at indices ${failedIndices.join(', ')}`);
         error.code = 'input_signature_failure';
         error.signingErrors = signatureIssues;
@@ -1228,210 +1285,25 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @returns {number}
    */
   get defaultSigHashType(): number {
-    return bitcoin.Transaction.SIGHASH_ALL;
+    return utxolib.Transaction.SIGHASH_ALL;
   }
 
   /**
-   * Parse a transaction's signature script to obtain public keys, signatures, the sig script, and other properties
-   * @param transaction
-   * @param inputIndex
-   * @returns { isSegwitInput: boolean, inputClassification: string, signatures: [Buffer], publicKeys: [Buffer], pubScript: Buffer }
+   * @deprecated - use utxolib.bitcoin.verifySignature() instead
    */
-  parseSignatureScript(transaction: any, inputIndex: number): ParsedSignatureScript {
-    const currentInput = transaction.ins[inputIndex];
-    const isSegwitInput = currentInput.witness.length > 0;
-    const isNativeSegwitInput = currentInput.script.length === 0;
-    let decompiledSigScript, inputClassification;
-    if (isSegwitInput) {
-      // The decompiledSigScript is the script containing the signatures, public keys, and the script that was committed
-      // to (pubScript). If this is a segwit input the decompiledSigScript is in the witness, regardless of whether it
-      // is native or not. The inputClassification is determined based on whether or not the input is native to give an
-      // accurate classification. Note that p2shP2wsh inputs will be classified as p2sh and not p2wsh.
-      decompiledSigScript = currentInput.witness;
-      if (isNativeSegwitInput) {
-        inputClassification = bitcoin.script.classifyWitness(bitcoin.script.compile(decompiledSigScript), true);
-      } else {
-        inputClassification = bitcoin.script.classifyInput(currentInput.script, true);
-      }
-    } else {
-      inputClassification = bitcoin.script.classifyInput(currentInput.script, true);
-      decompiledSigScript = bitcoin.script.decompile(currentInput.script);
+  verifySignature(
+    transaction: any,
+    inputIndex: number,
+    amount: number,
+    verificationSettings: {
+      signatureIndex?: number;
+      publicKey?: string;
+    } = {}
+  ): boolean {
+    if (transaction.network !== this.network) {
+      throw new Error(`network mismatch`);
     }
-
-    if (inputClassification === bitcoin.script.types.P2PKH) {
-      const [signature, publicKey] = decompiledSigScript;
-      const publicKeys = [publicKey];
-      const signatures = [signature];
-      const pubScript = bitcoin.script.pubKeyHash.output.encode(bitcoin.crypto.hash160(publicKey));
-
-      return { isSegwitInput, inputClassification, signatures, publicKeys, pubScript };
-    } else if (inputClassification === bitcoin.script.types.P2SH
-        || inputClassification === bitcoin.script.types.P2WSH) {
-      // Note the assumption here that if we have a p2sh or p2wsh input it will be multisig (appropriate because the
-      // BitGo platform only supports multisig within these types of inputs). Signatures are all but the last entry in
-      // the decompiledSigScript. The redeemScript/witnessScript (depending on which type of input this is) is the last
-      // entry in the decompiledSigScript (denoted here as the pubScript). The public keys are the second through
-      // antepenultimate entries in the decompiledPubScript. See below for a visual representation of the typical 2-of-3
-      // multisig setup:
-      //
-      // decompiledSigScript = 0 <sig1> <sig2> <pubScript>
-      // decompiledPubScript = 2 <pub1> <pub2> <pub3> 3 OP_CHECKMULTISIG
-      const signatures = decompiledSigScript.slice(0, -1);
-      const pubScript = _.last<Buffer>(decompiledSigScript);
-      const decompiledPubScript = bitcoin.script.decompile(pubScript);
-      const publicKeys = decompiledPubScript.slice(1, -2);
-
-      // Op codes 81 through 96 represent numbers 1 through 16 (see https://en.bitcoin.it/wiki/Script#Opcodes), which is
-      // why we subtract by 80 to get the number of signatures (n) and the number of public keys (m) in an n-of-m setup.
-      const len = decompiledPubScript.length;
-      const nSignatures = decompiledPubScript[0] - 80;
-      const nPubKeys = decompiledPubScript[len - 2] - 80;
-
-      // Due to a bug in the implementation of multisignature in the bitcoin protocol, a 0 is added to the signature
-      // script, so we add 1 when asserting the number of signatures matches the number of signatures expected by the
-      // pub script. Also, note that we consider a signature script with the the same number of signatures as public
-      // keys (+1 as noted above) valid because we use placeholder signatures when parsing a half-signed signature
-      // script.
-      if (signatures.length !== nSignatures + 1 && signatures.length !== nPubKeys + 1) {
-        throw new Error(`expected ${nSignatures} or ${nPubKeys} signatures, got ${signatures.length - 1}`);
-      }
-
-      if (publicKeys.length !== nPubKeys) {
-        throw new Error(`expected ${nPubKeys} public keys, got ${publicKeys.length}`);
-      }
-
-      const lastOpCode = decompiledPubScript[len - 1];
-      if (lastOpCode !== bitcoin.opcodes.OP_CHECKMULTISIG) {
-        throw new Error(`expected opcode #${bitcoin.opcodes.OP_CHECKMULTISIG}, got opcode #${lastOpCode}`);
-      }
-
-      return { isSegwitInput, inputClassification, signatures, publicKeys, pubScript };
-    } else {
-      return { isSegwitInput, inputClassification };
-    }
-  }
-
-  /**
-   * Calculate the hash to verify the signature against
-   * @param transaction Transaction object
-   * @param inputIndex
-   * @param pubScript
-   * @param amount The previous output's amount
-   * @param hashType
-   * @param isSegwitInput
-   * @returns {*}
-   */
-  calculateSignatureHash(transaction: any, inputIndex: number, pubScript: Buffer, amount: number, hashType: number, isSegwitInput: boolean): Buffer {
-    if (isSegwitInput) {
-      return transaction.hashForWitnessV0(inputIndex, pubScript, amount, hashType);
-    } else {
-      return transaction.hashForSignature(inputIndex, pubScript, hashType);
-    }
-  }
-
-  /**
-   * Verify the signature on a (half-signed) transaction
-   * @param transaction bitcoinjs-lib tx object
-   * @param inputIndex The input whererfore to check the signature
-   * @param amount For segwit and BCH, the input amount needs to be known for signature verification
-   * @param verificationSettings
-   * @param verificationSettings.signatureIndex The index of the signature to verify (only iterates over non-empty signatures)
-   * @param verificationSettings.publicKey The hex of the public key to verify (will verify all signatures)
-   * @returns {boolean}
-   */
-  verifySignature(transaction: any, inputIndex: number, amount: number, verificationSettings: {
-    signatureIndex?: number;
-    publicKey?: string;
-  } = {}): boolean {
-    const { signatures, publicKeys, isSegwitInput, inputClassification, pubScript } =
-        this.parseSignatureScript(transaction, inputIndex);
-
-    if (![bitcoin.script.types.P2WSH, bitcoin.script.types.P2SH, bitcoin.script.types.P2PKH].includes(inputClassification)) {
-      return false;
-    }
-
-    if (!publicKeys || publicKeys.length === 0) {
-      return false;
-    }
-
-    if (isSegwitInput && !amount) {
-      return false;
-    }
-
-    // get the first non-empty signature and verify it against all public keys
-    const nonEmptySignatures = _.filter(signatures, s => !_.isEmpty(s));
-
-    /*
-    We either want to verify all signature/pubkey combinations, or do an explicit combination
-
-    If a signature index is specified, only that signature is checked. It's verified against all public keys.
-    If a single public key is found to be valid, the function returns true.
-
-    If a public key is specified, we iterate over all signatures. If a single one matches the public key, the function
-    returns true.
-
-    If neither is specified, all signatures are checked against all public keys. Each signature must have its own distinct
-    public key that it matches for the function to return true.
-     */
-    let signaturesToCheck = nonEmptySignatures;
-    if (!_.isUndefined(verificationSettings.signatureIndex)) {
-      signaturesToCheck = [nonEmptySignatures[verificationSettings.signatureIndex]];
-    }
-
-    const publicKeyHex = verificationSettings.publicKey;
-    const matchedPublicKeyIndices = {};
-    let areAllSignaturesValid = true;
-
-    // go over all signatures
-    for (const signatureBuffer of signaturesToCheck) {
-
-      let isSignatureValid = false;
-
-      const hasSignatureBuffer = Buffer.isBuffer(signatureBuffer) && signatureBuffer.length > 0;
-      if (hasSignatureBuffer && Buffer.isBuffer(pubScript) && pubScript.length > 0) {
-        // slice the last byte from the signature hash input because it's the hash type
-        const signature = bitcoin.ECSignature.fromDER(signatureBuffer.slice(0, -1));
-        const hashType = _.last(signatureBuffer);
-        if (!hashType) {
-          // missing hashType byte - signature cannot be validated
-          return false;
-        }
-        const signatureHash = this.calculateSignatureHash(transaction, inputIndex, pubScript, amount, hashType, isSegwitInput);
-
-        for (let publicKeyIndex = 0; publicKeyIndex < publicKeys.length; publicKeyIndex++) {
-          const publicKeyBuffer = publicKeys[publicKeyIndex];
-          if (!_.isUndefined(publicKeyHex) && publicKeyBuffer.toString('hex') !== publicKeyHex) {
-            // we are only looking to verify one specific public key's signature (publicKeyHex)
-            // this particular public key is not the one whose signature we're trying to verify
-            continue;
-          }
-
-          if (matchedPublicKeyIndices[publicKeyIndex]) {
-            continue;
-          }
-
-          const publicKey = bitcoin.ECPair.fromPublicKeyBuffer(publicKeyBuffer);
-          if (publicKey.verify(signatureHash, signature)) {
-            isSignatureValid = true;
-            matchedPublicKeyIndices[publicKeyIndex] = true;
-            break;
-          }
-        }
-      }
-
-      if (!_.isUndefined(publicKeyHex) && isSignatureValid) {
-        // We were trying to see if any of the signatures was valid for the given public key. Evidently yes.
-        return true;
-      }
-
-      if (!isSignatureValid && _.isUndefined(publicKeyHex)) {
-        return false;
-      }
-
-      areAllSignaturesValid = isSignatureValid && areAllSignaturesValid;
-    }
-
-    return areAllSignaturesValid;
+    return utxolib.bitgo.verifySignature(transaction, inputIndex, amount, verificationSettings);
   }
 
   /**
@@ -1440,9 +1312,12 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param params
    * @param callback
    */
-  explainTransaction(params: ExplainTransactionOptions, callback?: NodeCallback<TransactionExplanation>): Bluebird<TransactionExplanation> {
+  explainTransaction(
+    params: ExplainTransactionOptions,
+    callback?: NodeCallback<TransactionExplanation>
+  ): Bluebird<TransactionExplanation> {
     const self = this;
-    return co<TransactionExplanation>(function *() {
+    return co<TransactionExplanation>(function* () {
       const txHex = _.get(params, 'txHex');
       if (!txHex || !_.isString(txHex) || !txHex.match(/^([a-f0-9]{2})+$/i)) {
         throw new Error('invalid transaction hex, must be a valid hex string');
@@ -1450,7 +1325,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
 
       let transaction;
       try {
-        transaction = bitcoin.Transaction.fromHex(txHex, self.network);
+        transaction = self.createTransactionFromHex(txHex);
       } catch (e) {
         throw new Error('failed to parse transaction hex');
       }
@@ -1471,7 +1346,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       };
 
       transaction.outs.forEach((currentOutput) => {
-        const currentAddress = self.getCoinLibrary().address.fromOutputScript(currentOutput.script, self.network);
+        const currentAddress = utxolib.address.fromOutputScript(currentOutput.script, self.network);
         const currentAmount = currentOutput.value;
 
         if (changeAddresses.indexOf(currentAddress) !== -1) {
@@ -1519,7 +1394,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
 
         let parsedSigScript;
         try {
-          parsedSigScript = self.parseSignatureScript(transaction, idx);
+          parsedSigScript = utxolib.bitgo.parseSignatureScript(transaction.ins[idx]);
         } catch (e) {
           return false;
         }
@@ -1550,19 +1425,21 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
           const amount = unspentValues[inputId];
 
           try {
-            return self.verifySignature(transaction, idx, amount, { signatureIndex: sigIndex });
+            return utxolib.bitgo.verifySignature(transaction, idx, amount, { signatureIndex: sigIndex });
           } catch (e) {
             return false;
           }
         });
 
-        return validSignatures.reduce((validCount, isValid) => isValid ? validCount + 1 : validCount, 0);
+        return validSignatures.reduce((validCount, isValid) => (isValid ? validCount + 1 : validCount), 0);
       });
 
       explanation.inputSignatures = inputSignatures;
       explanation.signatures = _.max(inputSignatures);
       return explanation;
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -1572,39 +1449,23 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param keys
    */
   createMultiSigAddress(addressType: string, signatureThreshold: number, keys: Buffer[]): MultiSigAddress {
-    function createWitnessProgram(inputScript) {
-      const witnessScriptHash = bitcoin.crypto.sha256(inputScript);
-      return bitcoin.script.witnessScriptHash.output.encode(witnessScriptHash);
+    if (signatureThreshold !== 2) {
+      throw new Error(`signatureThreshold must be 2, got ${signatureThreshold}`);
     }
-
-    const multiSigScript = bitcoin.script.multisig.output.encode(signatureThreshold, keys);
-    let outputScript, redeemScript, witnessScript;
-    switch (addressType) {
-      case Codes.UnspentTypeTcomb('p2sh'):
-        const multisigScriptHash = bitcoin.crypto.hash160(multiSigScript);
-        outputScript = bitcoin.script.scriptHash.output.encode(multisigScriptHash);
-        redeemScript = multiSigScript;
-        break;
-      case Codes.UnspentTypeTcomb('p2shP2wsh'):
-        const witnessProgram = createWitnessProgram(multiSigScript);
-        const witnessProgramHash = bitcoin.crypto.hash160(witnessProgram);
-        outputScript = bitcoin.script.scriptHash.output.encode(witnessProgramHash);
-        redeemScript = witnessProgram;
-        witnessScript = multiSigScript;
-        break;
-      case Codes.UnspentTypeTcomb('p2wsh'):
-        outputScript = createWitnessProgram(multiSigScript);
-        witnessScript = multiSigScript;
-        break;
-      default:
-        throw new Error(`unexpected addressType ${addressType}`);
+    if (keys.length !== 3) {
+      throw new Error(`key array length must be 3, got ${keys.length}`);
     }
+    const {
+      scriptPubKey: outputScript,
+      redeemScript,
+      witnessScript,
+    } = utxolib.bitgo.outputScripts.createOutputScript2of3(keys, addressType);
 
     return {
       outputScript,
       redeemScript,
       witnessScript,
-      address: bitcoin.address.fromOutputScript(outputScript, this.network),
+      address: utxolib.address.fromOutputScript(outputScript, this.network),
     };
   }
 
@@ -1614,7 +1475,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   // TODO(BG-11638): remove in next SDK major version release
   calculateRecoveryAddress(scriptHashScript: Buffer) {
-    return this.getCoinLibrary().address.fromOutputScript(scriptHashScript, this.network);
+    return utxolib.address.fromOutputScript(scriptHashScript, this.network);
   }
 
   /**
@@ -1645,7 +1506,7 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   getRecoveryMarketPrice(): Bluebird<string> {
     const self = this;
-    return co<string>(function *getRecoveryMarketPrice() {
+    return co<string>(function* getRecoveryMarketPrice() {
       const familyNamesToCoinGeckoIds = new Map()
         .set('BTC', 'bitcoin')
         .set('LTC', 'litecoin')
@@ -1706,11 +1567,11 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
     return response;
   }
 
-  protected abstract getAddressInfoFromExplorer(address: string, apiKey?: string): Bluebird<AddressInfo>;
-  protected abstract getUnspentInfoFromExplorer(address: string, apiKey?: string): Bluebird<UnspentInfo[]>;
+  public abstract getAddressInfoFromExplorer(address: string, apiKey?: string): Bluebird<AddressInfo>;
+  public abstract getUnspentInfoFromExplorer(address: string, apiKey?: string): Bluebird<UnspentInfo[]>;
 
   getTxInfoFromExplorer(faultyTxId: string): any {
-    return co(function *getUnspentFromWrongChain() {
+    return co(function* getUnspentFromWrongChain() {
       const TX_INFO_URL = this.url(`/public/tx/${faultyTxId}`);
       const res = (yield request.get(TX_INFO_URL)) as any;
       return res.body;
@@ -1725,336 +1586,21 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
   getUnspentInfoForCrossChainRecovery(addresses: string[]): any {
     const self = this;
 
-    return co(function *getUnspentInfoForCrossChainRecovery() {
-      const ADDRESS_UNSPENTS_URL = self.url(
-          `/public/addressUnspents/${_.uniq(addresses).join(',')}`
-        );
-        const addressRes = (yield request.get(ADDRESS_UNSPENTS_URL)) as any;
-        const unspents = addressRes.body;
-        return unspents;
+    return co(function* getUnspentInfoForCrossChainRecovery() {
+      const ADDRESS_UNSPENTS_URL = self.url(`/public/addressUnspents/${_.uniq(addresses).join(',')}`);
+      const addressRes = (yield request.get(ADDRESS_UNSPENTS_URL)) as any;
+      const unspents = addressRes.body;
+      return unspents;
     }).call(this);
   }
 
   /**
-   * Derive child keys at specific index, from provided parent keys
-   * @param {bitcoin.HDNode[]} keyArray
-   * @param {number} index
-   * @returns {bitcoin.HDNode[]}
-   */
-  deriveKeys(keyArray: bitcoin.HDNode[], index: number) {
-    return keyArray.map((k) => k.derive(index));
-  }
-
-  /**
    * Builds a funds recovery transaction without BitGo
-   * @param params
-   * - userKey: [encrypted] xprv, or xpub
-   * - backupKey: [encrypted] xprv, or xpub if the xprv is held by a KRS provider
-   * - walletPassphrase: necessary if one of the xprvs is encrypted
-   * - bitgoKey: xpub
-   * - krsProvider: necessary if backup key is held by KRS
-   * - recoveryDestination: target address to send recovered funds to
-   * - scan: the amount of consecutive addresses without unspents to scan through before stopping
-   * - ignoreAddressTypes: (optional) array of AddressTypes to ignore, these are strings defined in Codes.UnspentTypeTcomb
-   *        for example: ['p2shP2wsh', 'p2wsh'] will prevent code from checking for wrapped-segwit and native-segwit chains on the public block explorers
+   * @param params - {@see recover}
    * @param callback
    */
   recover(params: RecoverParams, callback?: NodeCallback<any>): Bluebird<any> {
-    const self = this;
-    return co(function *recover() {
-      // ============================HELPER FUNCTIONS============================
-      function queryBlockchainUnspentsPath(keyArray: bitcoin.HDNode[], basePath: string, addressesById) {
-        return co(function* () {
-          const MAX_SEQUENTIAL_ADDRESSES_WITHOUT_TXS = params.scan || 20;
-          let numSequentialAddressesWithoutTxs = 0;
-
-          // get unspents for these addresses
-          const gatherUnspents = co(function* coGatherUnspents(addrIndex) {
-            const derivedKeys = self.deriveKeys(keyArray, addrIndex);
-
-            const chain = Number(basePath.split('/').pop()); // extracts the chain from the basePath
-            const keys = derivedKeys.map(k => k.getPublicKeyBuffer());
-            const address: any = self.createMultiSigAddress(Codes.typeForCode(chain), 2, keys);
-
-            const addrInfo: AddressInfo = (yield self.getAddressInfoFromExplorer(address.address, params.apiKey)) as any;
-            // we use txCount here because it implies usage - having tx'es means the addr was generated and used
-            if (addrInfo.txCount === 0) {
-              numSequentialAddressesWithoutTxs++;
-            } else {
-              numSequentialAddressesWithoutTxs = 0;
-
-              if (addrInfo.totalBalance > 0) {
-                console.log(`Found an address with balance: ${address.address} with balance ${addrInfo.totalBalance}`);
-                // This address has a balance.
-                address.chainPath = basePath + '/' + addrIndex;
-                address.userKey = derivedKeys[0];
-                address.backupKey = derivedKeys[1];
-                addressesById[address.address] = address;
-
-                // Try to find unspents on it.
-                const addressUnspents: UnspentInfo[] = (yield self.getUnspentInfoFromExplorer(address.address, params.apiKey)) as any;
-
-                addressUnspents.forEach(function addAddressToUnspent(unspent) {
-                  unspent.address = address.address;
-                  walletUnspents.push(unspent);
-                });
-              }
-            }
-
-            if (numSequentialAddressesWithoutTxs >= MAX_SEQUENTIAL_ADDRESSES_WITHOUT_TXS) {
-              // stop searching for addresses with unspents in them, we've found ${MAX_SEQUENTIAL_ADDRESSES_WITHOUT_TXS} in a row with none
-              // we are done
-              return;
-            }
-
-            return gatherUnspents(addrIndex + 1);
-          });
-
-          const walletUnspents: UnspentInfo[] = [];
-          // This will populate walletAddresses
-          yield gatherUnspents(0);
-
-          if (walletUnspents.length === 0) {
-            // Couldn't find any addresses with funds
-            return [];
-          }
-
-          return walletUnspents;
-        }).call(this);
-      }
-
-      // ============================LOGIC============================
-      if (_.isUndefined(params.userKey)) {
-        throw new Error('missing userKey');
-      }
-
-      if (_.isUndefined(params.backupKey)) {
-        throw new Error('missing backupKey');
-      }
-
-      if (_.isUndefined(params.recoveryDestination) || !self.isValidAddress(params.recoveryDestination)) {
-        throw new Error('invalid recoveryDestination');
-      }
-
-      if (!_.isUndefined(params.scan) && (!_.isInteger(params.scan) || params.scan < 0)) {
-        throw new Error('scan must be a positive integer');
-      }
-
-      const isKrsRecovery = params.backupKey.startsWith('xpub') && !params.userKey.startsWith('xpub');
-      const isUnsignedSweep = params.backupKey.startsWith('xpub') && params.userKey.startsWith('xpub');
-      const krsProvider = config.krsProviders[params.krsProvider];
-
-      if (isKrsRecovery && _.isUndefined(krsProvider)) {
-        throw new Error('unknown key recovery service provider');
-      }
-
-      if (isKrsRecovery && !(krsProvider.supportedCoins.includes(self.getFamily()))) {
-        throw new Error('specified key recovery service does not support recoveries for this coin');
-      }
-
-      // check whether key material and password authenticate the users and return parent keys of all three keys of the wallet
-      const keys = yield self.initiateRecovery(params);
-
-      const [userKey, backupKey, bitgoKey] = (keys as any);
-      let derivedUserKey;
-      let baseKeyPath;
-      if (params.userKeyPath) {
-        derivedUserKey = deriveKeyByPath(userKey, params.userKeyPath);
-        const twoKeys = self.deriveKeys(self.deriveKeys([backupKey, bitgoKey], 0), 0);
-        baseKeyPath = [derivedUserKey, ...twoKeys];
-      } else {
-        baseKeyPath = self.deriveKeys(self.deriveKeys((keys as any), 0), 0);
-      }
-
-      const queries: any[] = [];
-      const addressesById = {};
-
-      _.forEach(Object.keys(Codes.UnspentTypeTcomb.meta.map), function (addressType) {
-        // If we aren't ignoring the address type, we derive the public key and construct the query for the external and
-        // internal indices
-        if (!_.includes(params.ignoreAddressTypes, addressType)) {
-          if (addressType === Codes.UnspentTypeTcomb('p2shP2wsh') && !self.supportsP2shP2wsh()) {
-            // P2shP2wsh is not supported. Skip.
-            return;
-          }
-
-          if (addressType === Codes.UnspentTypeTcomb('p2wsh') && !self.supportsP2wsh()) {
-            // P2wsh is not supported. Skip.
-            return;
-          }
-
-          let codes;
-          try {
-            codes = Codes.forType(Codes.UnspentTypeTcomb(addressType) as any);
-          } catch (e) {
-            // The unspent type is not supported by bitgo so attempting to get its chain codes throws. Catch that error
-            // and continue.
-            return;
-          }
-          const externalChainCode = codes.external;
-          const internalChainCode = codes.internal;
-          const externalKey = self.deriveKeys(baseKeyPath, externalChainCode);
-          const internalKey = self.deriveKeys(baseKeyPath, internalChainCode);
-          queries.push(queryBlockchainUnspentsPath(externalKey, '/0/0/' + externalChainCode, addressesById));
-          queries.push(queryBlockchainUnspentsPath(internalKey, '/0/0/' + internalChainCode, addressesById));
-        }
-      });
-
-      // Execute the queries and gather the unspents
-      const queryResponses = yield Promise.all(queries);
-      const unspents: any[] = _.flatten(queryResponses); // this flattens the array (turns an array of arrays into just one array)
-      const totalInputAmount = _.sumBy(unspents, 'amount');
-      if (totalInputAmount <= 0) {
-        throw new errors.ErrorNoInputToRecover();
-      }
-
-      // Build the transaction
-      const transactionBuilder = new bitcoin.TransactionBuilder(self.network);
-      self.prepareTransactionBuilder(transactionBuilder);
-      const txInfo: any = {};
-
-      const feePerByte: number = (yield self.getRecoveryFeePerBytes()) as any;
-
-      // KRS recovery transactions have a 2nd output to pay the recovery fee, like paygo fees. Use p2wsh outputs because
-      // they are the largest outputs and thus the most conservative estimate to use in calculating fees. Also use
-      // segwit overhead size and p2sh inputs for the same reason.
-      const outputSize = (isKrsRecovery ? 2 : 1) * VirtualSizes.txP2wshOutputSize;
-      const approximateSize =
-        VirtualSizes.txSegOverheadVSize + outputSize + (VirtualSizes.txP2shInputSize * unspents.length);
-      const approximateFee = approximateSize * feePerByte;
-
-      // Construct a transaction
-      txInfo.inputs = unspents.map(function addInputForUnspent(unspent) {
-        const address = addressesById[unspent.address];
-
-        transactionBuilder.addInput(unspent.txid, unspent.n, 0xffffffff, address.outputScript);
-
-        return {
-          chainPath: address.chainPath,
-          redeemScript: address.redeemScript && address.redeemScript.toString('hex'),
-          witnessScript: address.witnessScript && address.witnessScript.toString('hex'),
-          value: unspent.amount,
-        };
-      });
-
-      let recoveryAmount = totalInputAmount - approximateFee;
-      let krsFee;
-      if (isKrsRecovery) {
-        try {
-          krsFee = yield self.calculateFeeAmount({ provider: params.krsProvider, amount: recoveryAmount });
-          recoveryAmount -= krsFee;
-        } catch (err) {
-          // Don't let this error block the recovery -
-          console.dir(err);
-        }
-      }
-
-      if (recoveryAmount < 0) {
-        throw new Error(`this wallet\'s balance is too low to pay the fees specified by the KRS provider. 
-          Existing balance on wallet: ${totalInputAmount}. Estimated network fee for the recovery transaction
-          : ${approximateFee}, KRS fee to pay: ${krsFee}. After deducting fees, your total recoverable balance
-          is ${recoveryAmount}`);
-      }
-
-      transactionBuilder.addOutput(params.recoveryDestination, recoveryAmount);
-
-      if (isKrsRecovery && krsFee > 0) {
-        const krsFeeAddress = krsProvider.feeAddresses[self.getChain()];
-
-        if (!krsFeeAddress) {
-          throw new Error('this KRS provider has not configured their fee structure yet - recovery cannot be completed');
-        }
-
-        transactionBuilder.addOutput(krsFeeAddress, krsFee);
-      }
-
-      if (isUnsignedSweep) {
-        const txHex = transactionBuilder.buildIncomplete().toBuffer().toString('hex');
-        return self.formatForOfflineVault(txInfo, txHex);
-      } else {
-        const signedTx = self.signRecoveryTransaction(transactionBuilder, unspents, addressesById, !isKrsRecovery);
-        txInfo.transactionHex = signedTx.build().toBuffer().toString('hex');
-        try {
-          txInfo.tx = yield self.verifyRecoveryTransaction(txInfo);
-        } catch (e) {
-          // some coins don't have a reliable third party verification endpoint, or sometimes the third party endpoint
-          // could be unavailable due to service outage, so we continue without verification for those coins, but we will
-          // let users know that they should verify their own
-          // this message should be piped to WRW and displayed on the UI
-          if (e instanceof errors.MethodNotImplementedError || e instanceof errors.BlockExplorerUnavailable) {
-            console.log('Please verify your transaction by decoding the tx hex using a third-party api of your choice');
-          } else {
-            throw e;
-          }
-        }
-      }
-
-      if (isKrsRecovery) {
-        txInfo.coin = self.getChain();
-        txInfo.backupKey = params.backupKey;
-        txInfo.recoveryAmount = recoveryAmount;
-      }
-
-      return txInfo;
-    }).call(this).asCallback(callback);
-  }
-
-  /**
-   * Apply signatures to a funds recovery transaction using user + backup key
-   * @param txb {Object} a transaction builder object (with inputs and outputs)
-   * @param unspents {Array} the unspents to use in the transaction
-   * @param addresses {Array} the address and redeem script info for the unspents
-   * @param cosign {Boolean} whether to cosign this transaction with the user's backup key (false if KRS recovery)
-   * @returns the transaction builder originally passed in as the first argument
-   */
-  signRecoveryTransaction(txb: any, unspents: Output[], addresses: any, cosign: boolean): any {
-    interface SignatureIssue {
-      inputIndex: number;
-      unspent: Output;
-      error: Error | null;
-    }
-
-    const signatureIssues: SignatureIssue[] = [];
-    unspents.forEach((unspent, i) => {
-      const address = addresses[unspent.address];
-      const backupPrivateKey = address.backupKey.keyPair;
-      const userPrivateKey = address.userKey.keyPair;
-      // force-override networks
-      backupPrivateKey.network = this.network;
-      userPrivateKey.network = this.network;
-
-      const currentSignatureIssue: SignatureIssue = {
-        inputIndex: i,
-        unspent: unspent,
-        error: null,
-      };
-
-      if (cosign) {
-        try {
-          txb.sign(i, backupPrivateKey, address.redeemScript, this.defaultSigHashType, unspent.amount, address.witnessScript);
-        } catch (e) {
-          currentSignatureIssue.error = e;
-          signatureIssues.push(currentSignatureIssue);
-        }
-      }
-
-      try {
-        txb.sign(i, userPrivateKey, address.redeemScript, this.defaultSigHashType, unspent.amount, address.witnessScript);
-      } catch (e) {
-        currentSignatureIssue.error = e;
-        signatureIssues.push(currentSignatureIssue);
-      }
-    });
-
-    if (signatureIssues.length > 0) {
-      const failedIndices = signatureIssues.map(currentIssue => currentIssue.inputIndex);
-      const error: any = new Error(`Failed to sign inputs at indices ${failedIndices.join(', ')}`);
-      error.code = 'input_signature_failure';
-      error.signingErrors = signatureIssues;
-      throw error;
-    }
-
-    return txb;
+    return Bluebird.resolve(recover(this, this.bitgo, params)).asCallback(callback);
   }
 
   /**
@@ -2065,9 +1611,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    * @param callback
    * @returns {*}
    */
-  calculateFeeAmount(params: { provider: string, amount?: number }, callback?: NodeCallback<number>): Bluebird<number> {
+  calculateFeeAmount(params: { provider: string; amount?: number }, callback?: NodeCallback<number>): Bluebird<number> {
     const self = this;
-    return co<number>(function *calculateFeeAmount() {
+    return co<number>(function* calculateFeeAmount() {
       const krsProvider = config.krsProviders[params.provider];
 
       if (krsProvider === undefined) {
@@ -2078,12 +1624,14 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
         const feeAmountUsd = krsProvider.feeAmount;
         const currentPrice: number = (yield self.getRecoveryMarketPrice()) as any;
 
-        return Math.round(feeAmountUsd / currentPrice * self.getBaseFactor());
+        return Math.round((feeAmountUsd / currentPrice) * self.getBaseFactor());
       } else {
         // we can add more fee structures here as needed for different providers, such as percentage of recovery amount
         throw new Error('Fee structure not implemented');
       }
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
@@ -2101,14 +1649,8 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
    */
   recoverFromWrongChain(params: RecoverFromWrongChainOptions, callback?: NodeCallback<any>): Bluebird<any> {
     const self = this;
-    return co(function *recoverFromWrongChain() {
-      const {
-        txid,
-        recoveryAddress,
-        wallet,
-        walletPassphrase,
-        xprv,
-      } = params;
+    return co(function* recoverFromWrongChain() {
+      const { txid, recoveryAddress, wallet, walletPassphrase, xprv } = params;
 
       // params.recoveryCoin used to be params.coin, backwards compatibility
       const recoveryCoin = params.coin || params.recoveryCoin;
@@ -2123,7 +1665,9 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       const supportedRecoveryCoins = config.supportedCrossChainRecoveries[sourceCoinFamily];
 
       if (_.isUndefined(supportedRecoveryCoins) || !supportedRecoveryCoins.includes(recoveryCoinFamily)) {
-        throw new Error(`Recovery of ${sourceCoinFamily} balances from ${recoveryCoinFamily} wallets is not supported.`);
+        throw new Error(
+          `Recovery of ${sourceCoinFamily} balances from ${recoveryCoinFamily} wallets is not supported.`
+        );
       }
 
       const recoveryTool = new CrossChainRecoveryTool({
@@ -2145,26 +1689,27 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
       } else {
         return yield recoveryTool.buildUnsigned();
       }
-    }).call(this).asCallback(callback);
+    })
+      .call(this)
+      .asCallback(callback);
   }
 
   /**
-   * Generate secp256k1 key pair
+   * Generate bip32 key pair
    *
    * @param seed
    * @returns {Object} object with generated pub and prv
    */
-  generateKeyPair(seed: Buffer): { pub: string, prv: string } {
+  generateKeyPair(seed: Buffer): { pub: string; prv: string } {
     if (!seed) {
       // An extended private key has both a normal 256 bit private key and a 256
       // bit chain code, both of which must be random. 512 bits is therefore the
       // maximum entropy and gives us maximum security against cracking.
       seed = randomBytes(512 / 8);
     }
-    const extendedKey = bitcoin.HDNode.fromSeedBuffer(seed);
-    const xpub = extendedKey.neutered().toBase58();
+    const extendedKey = bip32.fromSeed(seed);
     return {
-      pub: xpub,
+      pub: extendedKey.neutered().toBase58(),
       prv: extendedKey.toBase58(),
     };
   }
@@ -2195,17 +1740,5 @@ export abstract class AbstractUtxoCoin extends BaseCoin {
 
   verifyRecoveryTransaction(txInfo: VerifyRecoveryTransactionOptions): Bluebird<any> {
     return Bluebird.reject(new errors.MethodNotImplementedError());
-  }
-
-  signMessage(key: { prv: string }, message: string | Buffer, callback?: NodeCallback<Buffer>): Bluebird<Buffer> {
-    return co<Buffer>(function* cosignMessage() {
-      const privateKey = bitcoin.HDNode.fromBase58(key.prv).getKey();
-      const privateKeyBuffer = privateKey.d.toBuffer(32);
-      const isCompressed = privateKey.compressed;
-      const prefix = bitcoin.networks.bitcoin.messagePrefix;
-      return bitcoinMessage.sign(message, privateKeyBuffer, isCompressed, prefix);
-    })
-      .call(this)
-      .asCallback(callback);
   }
 }

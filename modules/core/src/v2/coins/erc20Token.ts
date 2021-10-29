@@ -1,7 +1,7 @@
 /**
  * @prettier
  */
-import { HDNode } from '@bitgo/utxo-lib';
+import * as bip32 from 'bip32';
 import * as Bluebird from 'bluebird';
 import * as _ from 'lodash';
 import { BitGo } from '../../bitgo';
@@ -10,7 +10,7 @@ import { NodeCallback } from '../types';
 import { Eth, RecoverOptions, RecoveryInfo, optionalDeps, TransactionPrebuild } from './eth';
 import { CoinConstructor } from '../coinFactory';
 import { Util } from '../internal/util';
-import * as config from '../../config';
+import { checkKrsProvider, getIsKrsRecovery, getIsUnsignedSweep } from '../recovery/initiate';
 
 const co = Bluebird.coroutine;
 
@@ -25,10 +25,12 @@ export interface Erc20TokenConfig {
 
 export class Erc20Token extends Eth {
   public readonly tokenConfig: Erc20TokenConfig;
+  protected readonly sendMethodName: 'sendMultiSig' | 'sendMultiSigToken';
 
   constructor(bitgo: BitGo, tokenConfig: Erc20TokenConfig) {
     super(bitgo);
     this.tokenConfig = tokenConfig;
+    this.sendMethodName = 'sendMultiSigToken';
   }
 
   static createTokenConstructor(config: Erc20TokenConfig): CoinConstructor {
@@ -121,11 +123,11 @@ export class Erc20Token extends Eth {
         throw new Error('invalid recoveryDestination');
       }
 
-      const isKrsRecovery = params.backupKey.startsWith('xpub') && !params.userKey.startsWith('xpub');
-      const isUnsignedSweep = params.backupKey.startsWith('xpub') && params.userKey.startsWith('xpub');
+      const isKrsRecovery = getIsKrsRecovery(params);
+      const isUnsignedSweep = getIsUnsignedSweep(params);
 
-      if (isKrsRecovery && params.krsProvider && _.isUndefined(config.krsProviders[params.krsProvider])) {
-        throw new Error('unknown key recovery service provider');
+      if (isKrsRecovery) {
+        checkKrsProvider(self, params.krsProvider, { checkCoinFamilySupport: false });
       }
 
       // Clean up whitespace from entered values
@@ -153,8 +155,8 @@ export class Erc20Token extends Eth {
       let backupSigningKey;
 
       if (isKrsRecovery || isUnsignedSweep) {
-        const backupHDNode = HDNode.fromBase58(backupKey);
-        backupSigningKey = backupHDNode.getKey().getPublicKeyBuffer();
+        const backupHDNode = bip32.fromBase58(backupKey);
+        backupSigningKey = backupHDNode.publicKey;
         backupKeyAddress = `0x${optionalDeps.ethUtil.publicToAddress(backupSigningKey, true).toString('hex')}`;
       } else {
         let backupPrv;
@@ -168,8 +170,8 @@ export class Erc20Token extends Eth {
           throw new Error(`Error decrypting backup keychain: ${e.message}`);
         }
 
-        const backupHDNode = HDNode.fromBase58(backupPrv);
-        backupSigningKey = backupHDNode.getKey().getPrivateKeyBuffer();
+        const backupHDNode = bip32.fromBase58(backupPrv);
+        backupSigningKey = backupHDNode.privateKey;
         backupKeyAddress = `0x${optionalDeps.ethUtil.privateToAddress(backupSigningKey).toString('hex')}`;
       }
 
@@ -240,19 +242,19 @@ export class Erc20Token extends Eth {
 
       // calculate send data
       const sendMethodArgs = self.getSendMethodArgs(txInfo);
-      const methodSignature = optionalDeps.ethAbi.methodID('sendMultiSigToken', _.map(sendMethodArgs, 'type'));
+      const methodSignature = optionalDeps.ethAbi.methodID(self.sendMethodName, _.map(sendMethodArgs, 'type'));
       const encodedArgs = optionalDeps.ethAbi.rawEncode(_.map(sendMethodArgs, 'type'), _.map(sendMethodArgs, 'value'));
       const sendData = Buffer.concat([methodSignature, encodedArgs]);
 
-      // Build contract call and sign it
-      const tx = new optionalDeps.EthTx({
+      let tx = Eth.buildTransaction({
         to: params.walletContractAddress,
         nonce: backupKeyNonce,
         value: 0,
         gasPrice: gasPrice,
         gasLimit: gasLimit,
         data: sendData,
-        spendAmount: txAmount,
+        eip1559: params.eip1559,
+        replayProtectionOptions: params.replayProtectionOptions,
       });
 
       if (isUnsignedSweep) {
@@ -260,11 +262,11 @@ export class Erc20Token extends Eth {
       }
 
       if (!isKrsRecovery) {
-        tx.sign(backupSigningKey);
+        tx = tx.sign(backupSigningKey);
       }
 
       const signedTx: RecoveryInfo = {
-        id: optionalDeps.ethUtil.bufferToHex(tx.hash(true)),
+        id: optionalDeps.ethUtil.bufferToHex(tx.hash()),
         tx: tx.serialize().toString('hex'),
       };
 

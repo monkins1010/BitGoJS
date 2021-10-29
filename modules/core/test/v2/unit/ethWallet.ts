@@ -1,15 +1,15 @@
 import * as Bluebird from 'bluebird';
 import * as should from 'should';
+import * as bip32 from 'bip32';
 import * as secp256k1 from 'secp256k1';
 import * as nock from 'nock';
-import * as bitGoUtxoLib from '@bitgo/utxo-lib';
 import * as sinon from 'sinon';
 import { Util } from '../../../src/v2/internal/util';
 import * as common from '../../../src/common';
 
 import { TestBitGo } from '../../lib/test_bitgo';
+import { Capability, Transaction as EthTx } from '@ethereumjs/tx';
 const fixtures = require('../fixtures/coins/eth');
-const EthTx = require('ethereumjs-tx');
 import { SignTransactionOptions } from '../../../src/v2/coins/eth';
 const co = Bluebird.coroutine;
 
@@ -29,7 +29,7 @@ describe('Sign ETH Transaction', co(function *() {
     ethWallet = coin.newWalletObject(bitgo, coin, {});
     recipients = [{
       address: '0xe59dfe5c67114b39a5662cc856be536c614124c0',
-      amount: '100000'
+      amount: '100000',
     }];
     tx = { recipients, nextContractSequenceId: 0 };
   }));
@@ -104,10 +104,12 @@ describe('Ethereum Hop Transactions', co(function *() {
     tx = '0xf86c82015285012a05f200825208945208d8e80c6d1aef9be37b4bd19a9cf75ed93dc886b5e620f480008026a00e13f9e0e11337b2b0227e3412211d3625e43f1083fda399cc361dd4bf89083ba06c801a761e0aa3bc8db0ac2568d575b0fb306a1f04f4d5ba82ba3cc0ea0a83bd';
     txid = '0x0ac669c5fef8294443c75a31e32c44b97bbc9e43a18ea8beabcc2a3b45eb6ffa';
     bitgoKeyXprv = 'xprv9s21ZrQH143K3tpWBHWe31sLoXNRQ9AvRYJgitkKxQ4ATFQMwvr7hHNqYRUnS7PsjzB7aK1VxqHLuNQjj1sckJ2Jwo2qxmsvejwECSpFMfC';
-    const bitgoKey = bitGoUtxoLib.HDNode.fromBase58(bitgoKeyXprv);
-    const bitgoPrvBuffer = bitgoKey.getKey().getPrivateKeyBuffer();
+    const bitgoKey = bip32.fromBase58(bitgoKeyXprv);
+    if (!bitgoKey.privateKey) {
+      throw new Error('no privateKey');
+    }
     const bitgoXpub = bitgoKey.neutered().toBase58();
-    bitgoSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(Buffer.from(txid.slice(2), 'hex'), bitgoPrvBuffer).signature).toString('hex');
+    bitgoSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(Buffer.from(txid.slice(2), 'hex'), bitgoKey.privateKey).signature).toString('hex');
 
     env = 'test';
     bitgo = new TestBitGo({ env });
@@ -135,8 +137,8 @@ describe('Ethereum Hop Transactions', co(function *() {
       buildParams = {
         recipients: [{
           address: finalRecipient,
-          amount: sendAmount
-        }]
+          amount: sendAmount,
+        }],
       };
     }));
 
@@ -198,9 +200,11 @@ describe('Ethereum Hop Transactions', co(function *() {
       let error: string | undefined = undefined;
       const badTxid = '0xb4b3827a529c9166786e796528017889ac5027255b65b3fa2a3d3ad91244a12b';
       const badTxidBuffer = Buffer.from(badTxid.slice(2), 'hex');
-      const xprvNode = bitGoUtxoLib.HDNode.fromBase58(bitgoKeyXprv);
-
-      const badSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(badTxidBuffer, xprvNode.getKey().getPrivateKeyBuffer()).signature).toString('hex');
+      const xprvNode = bip32.fromBase58(bitgoKeyXprv);
+      if (!xprvNode.privateKey) {
+        throw new Error('no privateKey');
+      }
+      const badSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(badTxidBuffer, xprvNode.privateKey).signature).toString('hex');
       const badPrebuild = JSON.parse(JSON.stringify(prebuild));
       badPrebuild.signature = badSignature;
 
@@ -222,15 +226,15 @@ describe('Ethereum Hop Transactions', co(function *() {
     let gasLimitEstimate;
     let gasPrice;
 
-    const nockUserKey = function() {
+    const nockUserKey = function () {
       nock(bgUrl)
         .get(`/api/v2/teth/key/user`)
         .reply(200, {
           encryptedPrv: bitgo.encrypt({ input: userKeypair.xprv, password: TestBitGo.TEST_WALLET1_PASSCODE }),
-          path: userKeypair.path + userKeypair.walletSubPath
+          path: userKeypair.path + userKeypair.walletSubPath,
         });
     };
-    const nockFees = function() {
+    const nockFees = function () {
       const scope = nock(bgUrl)
         .get('/api/v2/teth/tx/fee')
         .query(true)
@@ -241,7 +245,7 @@ describe('Ethereum Hop Transactions', co(function *() {
       return scope;
     };
 
-    const nockBuild = function(walletId) {
+    const nockBuild = function (walletId) {
       nock(bgUrl)
         .post('/api/v2/teth/wallet/' + walletId + '/tx/build')
         .reply(200, { hopTransaction: prebuild, buildParams });
@@ -260,7 +264,7 @@ describe('Ethereum Hop Transactions', co(function *() {
       buildParams = {
         recipients: [{
           address: finalRecipient,
-          amount: sendAmount
+          amount: sendAmount,
         }],
         hop: true,
         walletPassphrase: TestBitGo.TEST_WALLET1_PASSCODE,
@@ -295,10 +299,10 @@ describe('Ethereum Hop Transactions', co(function *() {
   }));
 }));
 
-describe('Add final signature to ETH tx from offline vault', function() {
+describe('Add final signature to ETH tx from offline vault', function () {
 
   let paramsFromVault, expectedResult, bitgo, coin;
-  before(function() {
+  before(function () {
     const vals = fixtures.getHalfSignedTethFromVault();
     paramsFromVault = vals.paramsFromVault;
     expectedResult = vals.expectedResult;
@@ -308,29 +312,34 @@ describe('Add final signature to ETH tx from offline vault', function() {
 
   it('should successfully fully sign a half-signed transaction from the offline vault', co(function *() {
     const response = (yield coin.signTransaction(paramsFromVault)) as any;
-    const expectedTx = new EthTx(expectedResult.txHex);
-    const actualTx = new EthTx(response.txHex);
-    actualTx.nonce.should.deepEqual(expectedTx.nonce);
-    actualTx.to.should.deepEqual(expectedTx.to);
+    const expectedTx = EthTx.fromSerializedTx(Buffer.from(expectedResult.txHex, 'hex'));
+    const actualTx = EthTx.fromSerializedTx(Buffer.from(response.txHex, 'hex'));
+    actualTx.nonce.toString().should.deepEqual(expectedTx.nonce.toString());
+    should.exist(actualTx.to);
+    actualTx.to?.should.deepEqual(expectedTx.to);
     actualTx.value.should.deepEqual(expectedTx.value);
     actualTx.data.should.deepEqual(expectedTx.data);
-    actualTx.v.should.deepEqual(expectedTx.v);
-    actualTx.r.should.deepEqual(expectedTx.r);
-    actualTx.s.should.deepEqual(expectedTx.s);
-    actualTx.gasPrice.should.deepEqual(expectedTx.gasPrice);
-    actualTx.gasLimit.should.deepEqual(expectedTx.gasLimit);
-    response.txHex.should.equal(expectedResult.txHex);
+    actualTx.isSigned().should.equal(true);
+    actualTx.supports(Capability.EIP155ReplayProtection).should.equal(false);
+    actualTx.verifySignature().should.equal(true);
+    should.exist(actualTx.v);
+    actualTx.v.toString().should.deepEqual(expectedTx.v.toString());
+    actualTx.r.toString().should.deepEqual(expectedTx.r.toString());
+    actualTx.s.toString().should.deepEqual(expectedTx.s.toString());
+    actualTx.gasPrice.toString().should.deepEqual(expectedTx.gasPrice.toString());
+    actualTx.gasLimit.toString().should.deepEqual(expectedTx.gasLimit.toString());
+    response.txHex.toString().should.equal(expectedResult.txHex.toString());
   }));
 });
 
-describe('prebuildTransaction', function() {
+describe('prebuildTransaction', function () {
   let bitgo;
   let ethWallet;
   let recipients;
   let bgUrl;
   let gasLimit;
 
-  before(function() {
+  before(function () {
     bitgo = new TestBitGo({ env: 'test' });
     bitgo.initializeTestVars();
     const coin = bitgo.coin('teth');
@@ -373,8 +382,8 @@ describe('prebuildTransaction', function() {
   }));
 });
 
-describe('final-sign transaction from WRW', function() {
-  it('should add a second signature to unsigned sweep', (async function() {
+describe('final-sign transaction from WRW', function () {
+  it('should add a second signature to unsigned sweep for teth', (async function () {
     const bitgo = new TestBitGo({ env: 'test' });
     const basecoin = bitgo.coin('teth');
     const gasPrice = 200000000000;
@@ -413,4 +422,45 @@ describe('final-sign transaction from WRW', function() {
     outputs[0].address.should.equal(fixtures.WRWUnsignedSweepETHTx.recipient.address);
     outputs[0].amount.should.equal(fixtures.WRWUnsignedSweepETHTx.recipient.amount);
   }));
+
+  it('should add a second signature to unsigned sweep for erc20 token', (async function () {
+    const bitgo = new TestBitGo({ env: 'test' });
+    const basecoin = bitgo.coin('tdai');
+    const gasPrice = 200000000000;
+    const gasLimit = 500000;
+    const prv = 'xprv9s21ZrQH143K3399QBVvbmhs4RB5QzXD8XiW3NwtaeTem93QGd5VNjukUnwJQ94nUgugHSVzSVVe3RP16Urv1ZyijpYdyDamsxf2Shbq4w1'; // placeholder test prv
+    const tx = {
+      txPrebuild: fixtures.WRWUnsignedSweepERC20Tx,
+      prv,
+    };
+    // sign transaction once
+    const halfSigned = await basecoin.signTransaction(tx);
+
+    const wrapper = {} as SignTransactionOptions;
+    wrapper.txPrebuild = halfSigned;
+    wrapper.txPrebuild.recipients = halfSigned.halfSigned.recipients;
+    wrapper.txPrebuild.gasPrice = gasPrice.toString();
+    wrapper.txPrebuild.gasLimit = gasLimit.toString();
+    wrapper.isLastSignature = true;
+    wrapper.walletContractAddress = fixtures.WRWUnsignedSweepERC20Tx.walletContractAddress;
+    wrapper.prv = prv;
+
+    // sign transaction twice with the "isLastSignature" flag
+    const finalSignedTx = await basecoin.signTransaction(wrapper);
+    finalSignedTx.should.have.property('txHex');
+    const txBuilder = getBuilder('eth') as Eth.TransactionBuilder;
+    txBuilder.from('0x' + finalSignedTx.txHex); // add a 0x in front of this txhex
+    const rebuiltTx = await txBuilder.build();
+    const outputs = rebuiltTx.outputs.map(output => {
+      return {
+        address: output.address,
+        amount: output.value,
+      };
+    });
+    rebuiltTx.signature.length.should.equal(2);
+    outputs.length.should.equal(1);
+    outputs[0].address.should.equal(fixtures.WRWUnsignedSweepERC20Tx.recipient.address);
+    outputs[0].amount.should.equal(fixtures.WRWUnsignedSweepERC20Tx.recipient.amount);
+  }));
+
 });

@@ -2,7 +2,6 @@ import { randomBytes } from 'crypto';
 import { HDNode } from '@bitgo/utxo-lib';
 import { KeyPairOptions, isPrivateKey, isPublicKey, isSeed } from '../baseCoin/iface';
 import { Secp256k1ExtendedKeyPair } from '../baseCoin/secp256k1ExtendedKeyPair';
-import { getAccountHash } from './utils';
 import { SECP256K1_PREFIX } from './constants';
 const DEFAULT_SEED_SIZE_BYTES = 16;
 
@@ -41,14 +40,8 @@ export class KeyPair extends Secp256k1ExtendedKeyPair {
     if (this.hdNode) {
       const { xpub, xprv } = this.getExtendedKeys();
       return {
-        pub: HDNode.fromBase58(xpub)
-          .getPublicKeyBuffer()
-          .toString('hex'),
-        prv: xprv
-          ? HDNode.fromBase58(xprv)
-              .keyPair.getPrivateKeyBuffer()
-              .toString('hex')
-          : undefined,
+        pub: HDNode.fromBase58(xpub).getPublicKeyBuffer().toString('hex'),
+        prv: xprv ? HDNode.fromBase58(xprv).keyPair.getPrivateKeyBuffer().toString('hex') : undefined,
       };
     } else {
       return {

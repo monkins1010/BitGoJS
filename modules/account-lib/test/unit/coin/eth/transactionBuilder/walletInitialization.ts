@@ -5,7 +5,7 @@ import * as testData from '../../../../resources/eth/eth';
 import { Transaction } from '../../../../../src/coin/eth';
 import { Fee } from '../../../../../src/coin/eth/iface';
 
-describe('Eth Transaction builder wallet initialization', function() {
+describe('Eth Transaction builder wallet initialization', function () {
   const sourcePrv =
     'xprv9s21ZrQH143K3D8TXfvAJgHVfTEeQNW5Ys9wZtnUZkqPzFzSjbEJrWC1vZ4GnXCvR7rQL2UFX3RSuYeU9MrERm1XBvACow7c36vnz5iYyj2';
   const pub1 =
@@ -25,7 +25,7 @@ describe('Eth Transaction builder wallet initialization', function() {
     type?: TransactionType;
   }
 
-  const buildTransaction = async function(details: WalletCreationDetails): Promise<Transaction> {
+  const buildTransaction = async function (details: WalletCreationDetails): Promise<Transaction> {
     const txBuilder: any = getBuilder('teth');
     if (details.type !== undefined) {
       txBuilder.type(details.type);
@@ -258,10 +258,6 @@ describe('Eth Transaction builder wallet initialization', function() {
         fee: '10',
         gasLimit: '1000',
       });
-      const source = {
-        prv: sourcePrv,
-      };
-      const sourceKeyPair = new Eth.KeyPair(source);
       txBuilder.counter(1);
       should.throws(() => txBuilder.sign({ key: defaultKeyPair.getKeys().prv }));
     });
@@ -273,10 +269,6 @@ describe('Eth Transaction builder wallet initialization', function() {
         fee: '10',
         gasLimit: '1000',
       });
-      const source = {
-        prv: sourcePrv,
-      };
-      const sourceKeyPair = new Eth.KeyPair(source);
       txBuilder.counter(1);
       txBuilder.owner(new Eth.KeyPair({ pub: pub1 }).getAddress());
       txBuilder.owner(new Eth.KeyPair({ pub: pub2 }).getAddress());

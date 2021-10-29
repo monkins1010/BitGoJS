@@ -1,0 +1,153 @@
+import should from 'should';
+import { AvaxC, getBuilder, BaseCoin } from '../../../../../src';
+import { TransactionBuilder } from '../../../../../src/coin/avaxc';
+import { TxData } from '../../../../../src/coin/eth/iface';
+import * as testData from '../../../../resources/avaxc/avaxc';
+import { TransactionType } from '../../../../../src/coin/baseCoin';
+
+describe('Avax C-Chain Transfer Transaction', function () {
+  let txBuilder: AvaxC.TransactionBuilder;
+  const contractAddress = testData.TEST_ACCOUNT.ethAddress;
+  const initTxBuilder = (): void => {
+    txBuilder = getBuilder('tavaxc') as AvaxC.TransactionBuilder;
+    txBuilder.fee({
+      fee: '280000000000',
+      gasLimit: '7000000',
+    });
+    txBuilder.counter(1);
+    txBuilder.type(TransactionType.Send);
+    txBuilder.contract(contractAddress);
+  };
+
+  it('Should build transfer tx', async function () {
+    initTxBuilder();
+    txBuilder
+      .transfer()
+      .amount('100000000000000000') // This represents 0.1 Avax = 0.1 Ether
+      .contractSequenceId(1)
+      .expirationTime(50000)
+      .to(testData.TEST_ACCOUNT_2.ethAddress)
+      .key(testData.OWNER_2.ethKey);
+    txBuilder.sign({ key: testData.OWNER_1.ethKey });
+
+    const tx = await txBuilder.build();
+    const txJson: TxData = tx.toJson();
+
+    should.exists(txJson.chainId);
+    should.exists(txJson.from);
+    should.exists(txJson.to);
+    txJson.nonce.should.equals(1);
+    txJson.from?.should.equals(testData.OWNER_1.ethAddress);
+    txJson.chainId?.should.equals('0xa869');
+    txJson.gasLimit.should.equals('7000000');
+    txJson.gasPrice.should.equals('280000000000');
+  });
+
+  it('Should build with counter 0 if not manually defined', async function () {
+    const builder = getBuilder('tavaxc') as TransactionBuilder;
+    builder.fee({
+      fee: '280000000000',
+      gasLimit: '7000000',
+    });
+    builder.type(BaseCoin.TransactionType.Send);
+    builder.contract(testData.TEST_ACCOUNT.ethAddress);
+    builder
+      .transfer()
+      .amount('100000000000000000') // This represents 0.1 Avax = 0.1 Ether
+      .contractSequenceId(1)
+      .expirationTime(50000)
+      .to(testData.TEST_ACCOUNT_2.ethAddress)
+      .key(testData.OWNER_2.ethKey);
+    builder.sign({ key: testData.OWNER_1.ethKey });
+
+    const tx = await builder.build();
+
+    const txJson: TxData = tx.toJson();
+
+    should.exists(txJson.chainId);
+    should.exists(txJson.from);
+    should.exists(txJson.to);
+    txJson.nonce.should.equals(0);
+    txJson.from!.should.equals(testData.OWNER_1.ethAddress);
+    txJson.chainId!.should.equals('0xa869');
+    txJson.gasLimit.should.equals('7000000');
+    txJson.gasPrice.should.equals('280000000000');
+  });
+
+  it('Should build transfer with default type', async function () {
+    const builder = getBuilder('tavaxc') as TransactionBuilder;
+    builder.fee({
+      fee: '280000000000',
+      gasLimit: '7000000',
+    });
+    builder.counter(1);
+    builder.contract(testData.TEST_ACCOUNT.ethAddress);
+    builder
+      .transfer()
+      .amount('100000000000000000') // This represents 0.1 Avax = 0.1 Ether
+      .contractSequenceId(1)
+      .expirationTime(50000)
+      .to(testData.TEST_ACCOUNT_2.ethAddress)
+      .key(testData.OWNER_2.ethKey);
+    builder.sign({ key: testData.OWNER_1.ethKey });
+
+    const tx = await builder.build();
+    const txJson: TxData = tx.toJson();
+
+    should.exists(txJson.chainId);
+    should.exists(txJson.from);
+    should.exists(txJson.to);
+    txJson.nonce.should.equals(1);
+    txJson.from?.should.equals(testData.OWNER_1.ethAddress);
+    txJson.chainId?.should.equals('0xa869');
+    txJson.gasLimit.should.equals('7000000');
+    txJson.gasPrice.should.equals('280000000000');
+  });
+
+  it('Should create transfer object if not created or return it if already initialized', async function () {
+    const builder = getBuilder('tavaxc') as TransactionBuilder;
+    builder.fee({
+      fee: '280000000000',
+      gasLimit: '7000000',
+    });
+    builder.counter(1);
+    builder.contract(testData.TEST_ACCOUNT.ethAddress);
+    builder.type(TransactionType.Send);
+    const transferObj = builder.transfer().amount('5000').contractSequenceId(2).to(testData.TEST_ACCOUNT_2.ethAddress);
+    const transferObj2 = builder.transfer();
+
+    should.deepEqual(transferObj2, transferObj);
+  });
+
+  it('Should fail building transfer tx without fee', async function () {
+    const builder = getBuilder('tavaxc') as TransactionBuilder;
+    builder.counter(1);
+    builder.type(BaseCoin.TransactionType.Send);
+    builder.contract(testData.TEST_ACCOUNT.ethAddress);
+    builder
+      .transfer()
+      .amount('100000000000000000') // This represents 0.1 Avax = 0.1 Ether
+      .contractSequenceId(1)
+      .expirationTime(50000)
+      .to(testData.TEST_ACCOUNT_2.ethAddress)
+      .key(testData.OWNER_2.ethKey);
+    builder.sign({ key: testData.OWNER_1.ethKey });
+
+    builder.build().should.be.rejectedWith('Invalid transaction: missing fee');
+  });
+
+  it('Should fail getting transfer object with non-send type', async function () {
+    const builder = getBuilder('tavaxc') as TransactionBuilder;
+    builder.fee({
+      fee: '280000000000',
+      gasLimit: '7000000',
+    });
+    builder.counter(1);
+    builder.contract(testData.TEST_ACCOUNT.ethAddress);
+    builder.type(TransactionType.WalletInitialization);
+    should.throws(
+      () => builder.transfer(),
+      (e) => e.message === 'Transfers can only be set for send transactions',
+    );
+  });
+});

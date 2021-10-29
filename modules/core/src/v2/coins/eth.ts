@@ -1,8 +1,8 @@
 /**
  * @prettier
  */
+import * as bip32 from 'bip32';
 import { BigNumber } from 'bignumber.js';
-import * as utxoLib from '@bitgo/utxo-lib';
 import * as Bluebird from 'bluebird';
 import { randomBytes } from 'crypto';
 import * as debugLib from 'debug';
@@ -35,6 +35,9 @@ import * as config from '../../config';
 import { Util } from '../internal/util';
 import { EthereumLibraryUnavailableError } from '../../errors';
 import { BaseCoin as StaticsBaseCoin, EthereumNetwork } from '@bitgo/statics';
+import { checkKrsProvider, getIsKrsRecovery, getIsUnsignedSweep } from '../recovery/initiate';
+import type * as EthTxLib from '@ethereumjs/tx';
+import type * as EthCommon from '@ethereumjs/common';
 
 const co = Bluebird.coroutine;
 const debug = debugLib('bitgo:v2:eth');
@@ -60,13 +63,23 @@ export const optionalDeps = {
     }
   },
 
-  get EthTx() {
+  get EthTx(): typeof EthTxLib {
     try {
-      return require('ethereumjs-tx');
+      return require('@ethereumjs/tx');
     } catch (e) {
-      debug('unable to load ethereumjs-tx:');
+      debug('unable to load @ethereumjs/tx');
       debug(e.stack);
-      throw new EthereumLibraryUnavailableError(`ethereumjs-tx`);
+      throw new EthereumLibraryUnavailableError(`@ethereumjs/tx`);
+    }
+  },
+
+  get EthCommon(): typeof EthCommon {
+    try {
+      return require('@ethereumjs/common');
+    } catch (e) {
+      debug('unable to load @ethereumjs/common:');
+      debug(e.stack);
+      throw new EthereumLibraryUnavailableError(`@ethereumjs/common`);
     }
   },
 };
@@ -109,6 +122,10 @@ interface Recipient {
 interface SignFinalOptions {
   txPrebuild: {
     eip1559?: { maxPriorityFeePerGas: number; maxFeePerGas: number };
+    replayProtectionOptions?: {
+      chain: string | number;
+      hardfork: string;
+    };
     gasPrice?: string;
     gasLimit: string;
     recipients: Recipient[];
@@ -186,6 +203,25 @@ export interface RecoverOptions {
   krsProvider?: string;
   gasPrice?: number;
   gasLimit?: number;
+  eip1559?: { maxPriorityFeePerGas: number; maxFeePerGas: number };
+  replayProtectionOptions?: {
+    chain: string | number;
+    hardfork: string;
+  };
+}
+
+interface BuildTransactionParams {
+  to: string;
+  nonce?: number;
+  value: number;
+  data?: Buffer;
+  gasPrice?: number;
+  gasLimit?: number;
+  eip1559?: { maxPriorityFeePerGas: number; maxFeePerGas: number };
+  replayProtectionOptions?: {
+    chain: string | number;
+    hardfork: string;
+  };
 }
 
 export interface RecoveryInfo {
@@ -255,6 +291,7 @@ interface EthTransactionParams extends TransactionParams {
   gasPrice?: number;
   gasLimit?: number;
   hopParams?: HopParams;
+  hop?: boolean;
 }
 
 interface VerifyEthTransactionOptions extends VerifyTransactionOptions {
@@ -282,16 +319,58 @@ interface RecoverTokenTransaction {
 
 export class Eth extends BaseCoin {
   static hopTransactionSalt = 'bitgoHopAddressRequestSalt';
+  protected readonly sendMethodName: 'sendMultiSig' | 'sendMultiSigToken';
 
   readonly staticsCoin?: Readonly<StaticsBaseCoin>;
 
   protected constructor(bitgo: BitGo, staticsCoin?: Readonly<StaticsBaseCoin>) {
     super(bitgo);
     this.staticsCoin = staticsCoin;
+    this.sendMethodName = 'sendMultiSig';
   }
 
   static createInstance(bitgo: BitGo, staticsCoin?: Readonly<StaticsBaseCoin>): BaseCoin {
     return new Eth(bitgo, staticsCoin);
+  }
+
+  static buildTransaction(params: BuildTransactionParams): EthTxLib.FeeMarketEIP1559Transaction | EthTxLib.Transaction {
+    const ethCommon = params.replayProtectionOptions
+      ? new optionalDeps.EthCommon.default({
+          chain: params.replayProtectionOptions.chain,
+          hardfork: params.replayProtectionOptions.hardfork,
+        })
+      : // default to a pre EIP155 hardfork so the chain id is not included in the transaction
+        new optionalDeps.EthCommon.default({
+          chain: optionalDeps.EthCommon.Chain.Mainnet,
+          hardfork: optionalDeps.EthCommon.Hardfork.TangerineWhistle,
+        });
+
+    const baseParams = {
+      to: params.to,
+      nonce: params.nonce,
+      value: params.value,
+      data: params.data,
+    };
+
+    const unsignedEthTx = !!params.eip1559
+      ? optionalDeps.EthTx.FeeMarketEIP1559Transaction.fromTxData(
+          {
+            ...baseParams,
+            maxFeePerGas: new optionalDeps.ethUtil.BN(params.eip1559.maxFeePerGas),
+            maxPriorityFeePerGas: new optionalDeps.ethUtil.BN(params.eip1559.maxPriorityFeePerGas),
+          },
+          { common: ethCommon }
+        )
+      : optionalDeps.EthTx.Transaction.fromTxData(
+          {
+            ...baseParams,
+            gasPrice: new optionalDeps.ethUtil.BN(params.gasPrice),
+            gasLimit: new optionalDeps.ethUtil.BN(params.gasLimit),
+          },
+          { common: ethCommon }
+        );
+
+    return unsignedEthTx;
   }
 
   /**
@@ -347,8 +426,7 @@ export class Eth extends BaseCoin {
    */
   isValidPub(pub: string): boolean {
     try {
-      utxoLib.HDNode.fromBase58(pub);
-      return true;
+      return bip32.fromBase58(pub).isNeutered();
     } catch (e) {
       return false;
     }
@@ -565,8 +643,11 @@ export class Eth extends BaseCoin {
       throw new Error('params must include walletContractAddress, but got undefined');
     }
 
-    const signingNode = utxoLib.HDNode.fromBase58(params.prv);
-    const signingKey = signingNode.getKey().getPrivateKeyBuffer();
+    const signingNode = bip32.fromBase58(params.prv);
+    const signingKey = signingNode.privateKey;
+    if (_.isUndefined(signingKey)) {
+      throw new Error('missing private key');
+    }
 
     const txInfo = {
       recipient: txPrebuild.recipients[0],
@@ -576,7 +657,7 @@ export class Eth extends BaseCoin {
     };
 
     const sendMethodArgs = this.getSendMethodArgs(txInfo);
-    const methodSignature = optionalDeps.ethAbi.methodID('sendMultiSig', _.map(sendMethodArgs, 'type'));
+    const methodSignature = optionalDeps.ethAbi.methodID(this.sendMethodName, _.map(sendMethodArgs, 'type'));
     const encodedArgs = optionalDeps.ethAbi.rawEncode(_.map(sendMethodArgs, 'type'), _.map(sendMethodArgs, 'value'));
     const sendData = Buffer.concat([methodSignature, encodedArgs]);
 
@@ -588,11 +669,16 @@ export class Eth extends BaseCoin {
       gasPrice: new optionalDeps.ethUtil.BN(txPrebuild.gasPrice),
       gasLimit: new optionalDeps.ethUtil.BN(txPrebuild.gasLimit),
       data: sendData,
-      spendAmount: params.recipients[0].amount,
     };
 
-    const ethTx = new optionalDeps.EthTx(ethTxParams);
-    ethTx.sign(signingKey);
+    const unsignedEthTx = Eth.buildTransaction({
+      ...ethTxParams,
+      eip1559: params.txPrebuild.eip1559,
+      replayProtectionOptions: params.txPrebuild.replayProtectionOptions,
+    });
+
+    const ethTx = unsignedEthTx.sign(signingKey);
+
     return { txHex: ethTx.serialize().toString('hex') };
   }
 
@@ -753,7 +839,7 @@ export class Eth extends BaseCoin {
    */
   formatForOfflineVault(
     txInfo: UnformattedTxInfo,
-    ethTx: any,
+    ethTx: EthTxLib.Transaction | EthTxLib.FeeMarketEIP1559Transaction,
     userKey: string,
     backupKey: string,
     gasPrice: Buffer,
@@ -762,8 +848,11 @@ export class Eth extends BaseCoin {
   ): Bluebird<OfflineVaultTxInfo> {
     const self = this;
     return co<OfflineVaultTxInfo>(function* (): any {
-      const backupHDNode = utxoLib.HDNode.fromBase58(backupKey);
-      const backupSigningKey = backupHDNode.getKey().getPublicKeyBuffer();
+      if (!ethTx.to) {
+        throw new Error('Eth tx must have a `to` address');
+      }
+      const backupHDNode = bip32.fromBase58(backupKey);
+      const backupSigningKey = backupHDNode.publicKey;
       const response: OfflineVaultTxInfo = {
         tx: ethTx.serialize().toString('hex'),
         userKey,
@@ -772,7 +861,7 @@ export class Eth extends BaseCoin {
         gasPrice: optionalDeps.ethUtil.bufferToInt(gasPrice).toFixed(),
         gasLimit,
         recipients: [txInfo.recipient],
-        walletContractAddress: '0x' + ethTx.to.toString('hex'),
+        walletContractAddress: ethTx.to.toString(),
         amount: txInfo.recipient.amount,
         backupKeyNonce: yield self.getAddressNonce(
           `0x${optionalDeps.ethUtil.publicToAddress(backupSigningKey, true).toString('hex')}`
@@ -859,11 +948,11 @@ export class Eth extends BaseCoin {
         throw new Error('invalid recoveryDestination');
       }
 
-      const isKrsRecovery = params.backupKey.startsWith('xpub') && !params.userKey.startsWith('xpub');
-      const isUnsignedSweep = params.backupKey.startsWith('xpub') && params.userKey.startsWith('xpub');
+      const isKrsRecovery = getIsKrsRecovery(params);
+      const isUnsignedSweep = getIsUnsignedSweep(params);
 
-      if (isKrsRecovery && params.krsProvider && _.isUndefined(config.krsProviders[params.krsProvider])) {
-        throw new Error('unknown key recovery service provider');
+      if (isKrsRecovery) {
+        checkKrsProvider(self, params.krsProvider, { checkCoinFamilySupport: false });
       }
 
       // Clean up whitespace from entered values
@@ -873,7 +962,9 @@ export class Eth extends BaseCoin {
       // Set new eth tx fees (using default config values from platform)
 
       const gasLimit = new optionalDeps.ethUtil.BN(self.setGasLimit(params.gasLimit));
-      const gasPrice = new optionalDeps.ethUtil.BN(self.setGasPrice(params.gasPrice));
+      const gasPrice = params.eip1559
+        ? new optionalDeps.ethUtil.BN(params.eip1559.maxFeePerGas)
+        : new optionalDeps.ethUtil.BN(self.setGasPrice(params.gasPrice));
       if (!userKey.startsWith('xpub') && !userKey.startsWith('xprv')) {
         try {
           userKey = self.bitgo.decrypt({
@@ -889,8 +980,8 @@ export class Eth extends BaseCoin {
       let backupSigningKey;
 
       if (isKrsRecovery || isUnsignedSweep) {
-        const backupHDNode = utxoLib.HDNode.fromBase58(backupKey);
-        backupSigningKey = backupHDNode.getKey().getPublicKeyBuffer();
+        const backupHDNode = bip32.fromBase58(backupKey);
+        backupSigningKey = backupHDNode.publicKey;
         backupKeyAddress = `0x${optionalDeps.ethUtil.publicToAddress(backupSigningKey, true).toString('hex')}`;
       } else {
         // Decrypt backup private key and get address
@@ -905,8 +996,11 @@ export class Eth extends BaseCoin {
           throw new Error(`Error decrypting backup keychain: ${e.message}`);
         }
 
-        const backupHDNode = utxoLib.HDNode.fromBase58(backupPrv);
-        backupSigningKey = backupHDNode.getKey().getPrivateKeyBuffer();
+        const backupHDNode = bip32.fromBase58(backupPrv);
+        backupSigningKey = backupHDNode.privateKey;
+        if (!backupHDNode) {
+          throw new Error('no private key');
+        }
         backupKeyAddress = `0x${optionalDeps.ethUtil.privateToAddress(backupSigningKey).toString('hex')}`;
       }
 
@@ -965,20 +1059,23 @@ export class Eth extends BaseCoin {
 
       // calculate send data
       const sendMethodArgs = self.getSendMethodArgs(txInfo);
-      const methodSignature = optionalDeps.ethAbi.methodID('sendMultiSig', _.map(sendMethodArgs, 'type'));
+      const methodSignature = optionalDeps.ethAbi.methodID(self.sendMethodName, _.map(sendMethodArgs, 'type'));
       const encodedArgs = optionalDeps.ethAbi.rawEncode(_.map(sendMethodArgs, 'type'), _.map(sendMethodArgs, 'value'));
       const sendData = Buffer.concat([methodSignature, encodedArgs]);
 
-      // Build contract call and sign it
-      const tx = new optionalDeps.EthTx({
+      const txParams = {
         to: params.walletContractAddress,
         nonce: backupKeyNonce,
         value: 0,
         gasPrice: gasPrice,
         gasLimit: gasLimit,
         data: sendData,
-        spendAmount: txAmount,
-      });
+        eip1559: params.eip1559,
+        replayProtectionOptions: params.replayProtectionOptions,
+      };
+
+      // Build contract call and sign it
+      const tx = Eth.buildTransaction(txParams);
 
       if (isUnsignedSweep) {
         return self.formatForOfflineVault(txInfo, tx, userKey, backupKey, gasPrice, gasLimit);
@@ -989,7 +1086,7 @@ export class Eth extends BaseCoin {
       }
 
       const signedTx: RecoveryInfo = {
-        id: optionalDeps.ethUtil.bufferToHex(tx.hash(true)),
+        id: optionalDeps.ethUtil.bufferToHex(tx.hash()),
         tx: tx.serialize().toString('hex'),
       };
 
@@ -1255,7 +1352,10 @@ export class Eth extends BaseCoin {
 
       const userKeychain = yield self.keychains().get({ id: wallet.keyIds()[0] });
       const userPrv = wallet.getUserPrv({ keychain: userKeychain, walletPassphrase });
-      const userPrvBuffer = utxoLib.HDNode.fromBase58(userPrv).getKey().getPrivateKeyBuffer();
+      const userPrvBuffer = bip32.fromBase58(userPrv).privateKey;
+      if (!userPrvBuffer) {
+        throw new Error('invalid userPrv');
+      }
       if (!recipients || !Array.isArray(recipients)) {
         throw new Error('expecting array of recipients');
       }
@@ -1326,7 +1426,7 @@ export class Eth extends BaseCoin {
 
       // first, validate the HSM signature
       const serverXpub = common.Environments[self.bitgo.getEnv()].hsmXpub;
-      const serverPubkeyBuffer: Buffer = utxoLib.HDNode.fromBase58(serverXpub).getPublicKeyBuffer();
+      const serverPubkeyBuffer: Buffer = bip32.fromBase58(serverXpub).publicKey;
       const signatureBuffer: Buffer = Buffer.from(optionalDeps.ethUtil.stripHexPrefix(signature), 'hex');
       const messageBuffer: Buffer = Buffer.from(optionalDeps.ethUtil.stripHexPrefix(id), 'hex');
 
@@ -1336,7 +1436,7 @@ export class Eth extends BaseCoin {
         throw new Error(`Hop txid signature invalid`);
       }
 
-      const builtHopTx = new optionalDeps.EthTx(tx);
+      const builtHopTx = optionalDeps.EthTx.TransactionFactory.fromSerializedData(optionalDeps.ethUtil.toBuffer(tx));
       // If original params are given, we can check them against the transaction prebuild params
       if (!_.isNil(originalParams)) {
         const { recipients } = originalParams;
@@ -1346,7 +1446,10 @@ export class Eth extends BaseCoin {
         const originalDestination: string = recipients[0].address;
 
         const hopAmount = new BigNumber(optionalDeps.ethUtil.bufferToHex(builtHopTx.value));
-        const hopDestination: string = optionalDeps.ethUtil.bufferToHex(builtHopTx.to);
+        if (!builtHopTx.to) {
+          throw new Error(`Transaction does not have a destination address`);
+        }
+        const hopDestination = builtHopTx.to.toString();
         if (!hopAmount.eq(originalAmount)) {
           throw new Error(`Hop amount: ${hopAmount} does not equal original amount: ${originalAmount}`);
         }
@@ -1504,7 +1607,7 @@ export class Eth extends BaseCoin {
       // maximum entropy and gives us maximum security against cracking.
       seed = randomBytes(512 / 8);
     }
-    const extendedKey = utxoLib.HDNode.fromSeedBuffer(seed);
+    const extendedKey = bip32.fromSeed(seed);
     const xpub = extendedKey.neutered().toBase58();
     return {
       pub: xpub,
@@ -1544,25 +1647,25 @@ export class Eth extends BaseCoin {
       if (!txParams?.recipients || !txPrebuild?.recipients || !wallet) {
         throw new Error(`missing params`);
       }
-      if (txPrebuild.hopTransaction && txPrebuild.isBatch) {
+      if (txParams.hop && txParams.recipients.length > 1) {
         throw new Error(`tx cannot be both a batch and hop transaction`);
       }
       if (txPrebuild.recipients.length !== 1) {
         throw new Error(`txPrebuild should only have 1 recipient but ${txPrebuild.recipients.length} found`);
       }
-      if (txPrebuild.hopTransaction) {
+      if (txParams.hop && txPrebuild.hopTransaction) {
         // Check recipient amount for hop transaction
         if (txParams.recipients.length !== 1) {
           throw new Error(`hop transaction only supports 1 recipient but ${txParams.recipients.length} found`);
         }
 
         // Check tx sends to hop address
-        const decodedHopTx = new optionalDeps.EthTx(txPrebuild.hopTransaction.tx);
-        const expectedHopAddress = decodedHopTx.getSenderAddress().toString('hex');
-        if (
-          expectedHopAddress.toLowerCase() !==
-          optionalDeps.ethUtil.stripHexPrefix(txPrebuild.recipients[0].address.toLowerCase())
-        ) {
+        const decodedHopTx = optionalDeps.EthTx.TransactionFactory.fromSerializedData(
+          optionalDeps.ethUtil.toBuffer(txPrebuild.hopTransaction.tx)
+        );
+        const expectedHopAddress = optionalDeps.ethUtil.stripHexPrefix(decodedHopTx.getSenderAddress().toString());
+        const actualHopAddress = optionalDeps.ethUtil.stripHexPrefix(txPrebuild.recipients[0].address);
+        if (expectedHopAddress.toLowerCase() !== actualHopAddress.toLowerCase()) {
           throw new Error('recipient address of txPrebuild does not match hop address');
         }
 
@@ -1576,7 +1679,7 @@ export class Eth extends BaseCoin {
 
         // Check destination address and amount
         yield self.validateHopPrebuild(wallet, txPrebuild.hopTransaction, { recipients });
-      } else if (txPrebuild.isBatch) {
+      } else if (txParams.recipients.length > 1) {
         // Check total amount for batch transaction
         let expectedTotalAmount = new BigNumber(0);
         for (let i = 0; i < txParams.recipients.length; i++) {

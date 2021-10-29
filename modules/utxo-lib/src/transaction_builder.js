@@ -15,6 +15,7 @@ var P2SH = SIGNABLE.concat([btemplates.types.P2WPKH, btemplates.types.P2WSH])
 var ECPair = require('./ecpair')
 var ECSignature = require('./ecsignature')
 var Transaction = require('./transaction')
+const { getMainnet, getNetworkName } = require('./coins')
 
 var debug = require('debug')('bitgo:utxolib:txbuilder')
 
@@ -192,32 +193,19 @@ function fixMultisigOrder (input, transaction, vin, value, network) {
     unmatched.some(function (signature, i) {
       // skip if undefined || OP_0
       if (!signature) return false
+      if (coins.isZcash(network) && value === undefined) {
+        return false
+      }
 
       // TODO: avoid O(n) hashForSignature
       var parsed = ECSignature.parseScriptSignature(signature)
-      var hash
-      switch (network.coin) {
-        case coins.BSV:
-        case coins.BCH:
-          hash = transaction.hashForCashSignature(vin, input.signScript, value, parsed.hashType)
-          break
-        case coins.BTG:
-          hash = transaction.hashForGoldSignature(vin, input.signScript, value, parsed.hashType)
-          break
-        case coins.ZEC:
-          if (value === undefined) {
-            return false
-          }
-          hash = transaction.hashForZcashSignature(vin, input.signScript, value, parsed.hashType)
-          break
-        default:
-          if (input.witness) {
-            hash = transaction.hashForWitnessV0(vin, input.signScript, value, parsed.hashType)
-          } else {
-            hash = transaction.hashForSignature(vin, input.signScript, parsed.hashType)
-          }
-          break
-      }
+      var hash = transaction.hashForSignatureByNetwork(
+        vin,
+        input.signScript,
+        value,
+        parsed.hashType,
+        !!input.witness,
+      )
 
       // skip if signature does not match pubKey
       if (!keyPair.verify(hash, parsed.signature)) return false
@@ -521,6 +509,7 @@ TransactionBuilder.prototype.setVersion = function (version, overwinter = true) 
 
   if (coins.isZcashCompatible(this.network)) {
     if (!this.network.consensusBranchId.hasOwnProperty(this.tx.version)) {
+      /* istanbul ignore next */
       throw new Error('Unsupported Zcash transaction')
     }
     this.tx.overwintered = (overwinter ? 1 : 0)
@@ -534,6 +523,7 @@ TransactionBuilder.prototype.setConsensusBranchId = function (consensusBranchId)
     throw new Error('consensusBranchId can only be set for Zcash or compatible transactions')
   }
   if (!this.inputs.every(function (input) { return input.signatures === undefined })) {
+    /* istanbul ignore next */
     throw new Error('Changing the consensusBranchId for a partially signed transaction would invalidate signatures')
   }
   typeforce(types.UInt32, consensusBranchId)
@@ -590,7 +580,7 @@ TransactionBuilder.fromTransaction = function (transaction, network) {
   var txbNetwork = network || networks.bitcoin
   var txb = new TransactionBuilder(txbNetwork)
 
-  if (txb.network.coin !== transaction.network.coin) {
+  if (getMainnet(txb.network) !== getMainnet(transaction.network)) {
     throw new Error('This transaction is incompatible with the transaction builder')
   }
 
@@ -605,11 +595,6 @@ TransactionBuilder.fromTransaction = function (transaction, network) {
       txb.setExpiryHeight(transaction.expiryHeight)
     }
 
-    // We don't support protected transactions but we copy the joinsplits for consistency. However, the transaction
-    // builder will fail when we try to sign one of these transactions
-    if (txb.tx.supportsJoinSplits()) {
-      txb.setJoinSplits(transaction)
-    }
     txb.setConsensusBranchId(transaction.consensusBranchId)
   }
 
@@ -820,25 +805,13 @@ TransactionBuilder.prototype.sign = function (vin, keyPair, redeemScript, hashTy
   }
 
   // ready to sign
-  var signatureHash
-  if (coins.isBitcoinGold(this.network)) {
-    signatureHash = this.tx.hashForGoldSignature(vin, input.signScript, witnessValue, hashType, input.witness)
-    debug('Calculated BTG sighash (%s)', signatureHash.toString('hex'))
-  } else if (coins.isBitcoinCash(this.network) || coins.isBitcoinSV(this.network)) {
-    signatureHash = this.tx.hashForCashSignature(vin, input.signScript, witnessValue, hashType)
-    debug('Calculated BCH sighash (%s)', signatureHash.toString('hex'))
-  } else if (coins.isZcashCompatible(this.network)) {
-    signatureHash = this.tx.hashForZcashSignature(vin, input.signScript, witnessValue, hashType)
-    debug('Calculated ZEC sighash (%s)', signatureHash.toString('hex'))
-  } else {
-    if (input.witness) {
-      signatureHash = this.tx.hashForWitnessV0(vin, input.signScript, witnessValue, hashType)
-      debug('Calculated witnessv0 sighash (%s)', signatureHash.toString('hex'))
-    } else {
-      signatureHash = this.tx.hashForSignature(vin, input.signScript, hashType)
-      debug('Calculated sighash (%s)', signatureHash.toString('hex'))
-    }
-  }
+  var signatureHash = this.tx.hashForSignatureByNetwork(
+    vin,
+    input.signScript,
+    witnessValue,
+    hashType,
+    !!input.witness,
+  )
 
   // enforce in order signing of public keys
   var signed = input.pubKeys.some(function (pubKey, i) {

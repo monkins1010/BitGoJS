@@ -2,16 +2,14 @@ import { TestBitGo } from '../../../lib/test_bitgo';
 import { Wallet } from '../../../../src/v2/wallet';
 
 import * as nock from 'nock';
+import * as bip32 from 'bip32';
 import * as secp256k1 from 'secp256k1';
 import * as common from '../../../../src/common';
-import * as bitGoUtxoLib from '@bitgo/utxo-lib';
-import * as _ from 'lodash';
 
 nock.enableNetConnect();
 
 describe('ETH:', function () {
   let bitgo;
-  let bitgoPrvBuffer;
   let hopTxBitgoSignature;
 
   const address1 = '0x174cfd823af8ce27ed0afee3fcf3c3ba259116be';
@@ -24,10 +22,12 @@ describe('ETH:', function () {
 
   before(function () {
     const bitgoKeyXprv = 'xprv9s21ZrQH143K3tpWBHWe31sLoXNRQ9AvRYJgitkKxQ4ATFQMwvr7hHNqYRUnS7PsjzB7aK1VxqHLuNQjj1sckJ2Jwo2qxmsvejwECSpFMfC';
-    const bitgoKey = bitGoUtxoLib.HDNode.fromBase58(bitgoKeyXprv);
+    const bitgoKey = bip32.fromBase58(bitgoKeyXprv);
+    if (!bitgoKey.privateKey) {
+      throw new Error('no privateKey');
+    }
     const bitgoXpub = bitgoKey.neutered().toBase58();
-    bitgoPrvBuffer = bitgoKey.getKey().getPrivateKeyBuffer();
-    hopTxBitgoSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(Buffer.from(hopTxid.slice(2), 'hex'), bitgoPrvBuffer).signature).toString('hex');
+    hopTxBitgoSignature = '0xaa' + Buffer.from(secp256k1.ecdsaSign(Buffer.from(hopTxid.slice(2), 'hex'), bitgoKey.privateKey).signature).toString('hex');
 
     const env = 'test';
     bitgo = new TestBitGo({ env: 'test' });
@@ -140,6 +140,7 @@ describe('ETH:', function () {
         recipients: [{ amount: 1000000000000000, address: hopDestinationAddress }],
         wallet: wallet,
         walletPassphrase: 'fakeWalletPassphrase',
+        hop: true,
       };
 
       const txPrebuild = {
@@ -200,13 +201,14 @@ describe('ETH:', function () {
       const wallet = new Wallet(bitgo, coin, {});
 
       const txParams = {
-        recipients: [{ amount: '1000000000000', address: address1 }],
+        recipients: [{ amount: '1000000000000', address: address1 }, { amount: '2500000000000', address: address2 }],
         wallet: wallet,
         walletPassphrase: 'fakeWalletPassphrase',
+        hop: true,
       };
 
       const txPrebuild = {
-        recipients: [{ amount: '5000000000000', address: address1 }],
+        recipients: [{ amount: '3500000000000', address: address1 }],
         nextContractSequenceId: 0,
         gasPrice: 20000000000,
         gasLimit: 500000,
@@ -262,46 +264,6 @@ describe('ETH:', function () {
         .should.be.rejectedWith('txPrebuild should only have 1 recipient but 2 found');
     });
 
-    it('should reject a hop txPrebuild from the bitgo server that was not intended have exactly 1 recipient', async function () {
-      const coin = bitgo.coin('teth');
-      const wallet = new Wallet(bitgo, coin, {});
-
-      const txParams = {
-        recipients: [{ amount: '1000000000000000', address: hopDestinationAddress }, { amount: '1000000000000000', address: address1 }],
-        wallet: wallet,
-        walletPassphrase: 'fakeWalletPassphrase',
-      };
-
-      const txPrebuild = {
-        recipients: [{ amount: '5000000000000000', address: hopContractAddress }],
-        nextContractSequenceId: 0,
-        gasPrice: 20000000000,
-        gasLimit: 500000,
-        isBatch: false,
-        coin: 'teth',
-        walletId: 'fakeWalletId',
-        walletContractAddress: 'fakeWalletContractAddress',
-        hopTransaction: {
-          tx: hopTx,
-          id: hopTxid,
-          signature: hopTxBitgoSignature,
-          paymentId: '2773928196',
-          gasPrice: 20000000000,
-          gasLimit: 500000,
-          amount: '1000000000000000',
-          recipient: hopDestinationAddress,
-          nonce: 0,
-          userReqSig: userReqSig,
-          gasPriceMax: 500000000000,
-        },
-      };
-
-      const verification = {};
-
-      await coin.verifyTransaction({ txParams, txPrebuild, wallet, verification })
-        .should.be.rejectedWith('hop transaction only supports 1 recipient but 2 found');
-    });
-
     it('should reject a hop txPrebuild that does not send to its hop address', async function () {
       const coin = bitgo.coin('teth');
       const wallet = new Wallet(bitgo, coin, {});
@@ -310,6 +272,7 @@ describe('ETH:', function () {
         recipients: [{ amount: '1000000000000000', address: hopDestinationAddress }],
         wallet: wallet,
         walletPassphrase: 'fakeWalletPassphrase',
+        hop: true,
       };
 
       const txPrebuild = {
@@ -394,33 +357,6 @@ describe('ETH:', function () {
 
       await coin.verifyTransaction({ txParams, txPrebuild, wallet, verification })
         .should.be.rejectedWith('recipient address of txPrebuild does not match batcher address');
-    });
-
-    it('should reject a normal txPrebuild from the bitgo server that was not intended have exactly 1 recipient', async function () {
-      const coin = bitgo.coin('teth');
-      const wallet = new Wallet(bitgo, coin, {});
-
-      const txParams = {
-        recipients: [{ amount: '1000000000000', address: address1 }, { amount: '2500000000000', address: address2 }],
-        wallet: wallet,
-        walletPassphrase: 'fakeWalletPassphrase',
-      };
-
-      const txPrebuild = {
-        recipients: [{ amount: '1000000000000', address: address1 }],
-        nextContractSequenceId: 0,
-        gasPrice: 20000000000,
-        gasLimit: 500000,
-        isBatch: false,
-        coin: 'teth',
-        walletId: 'fakeWalletId',
-        walletContractAddress: 'fakeWalletContractAddress',
-      };
-
-      const verification = {};
-
-      await coin.verifyTransaction({ txParams, txPrebuild, wallet, verification })
-        .should.be.rejectedWith('normal transaction only supports 1 recipient but 2 found');
     });
 
     it('should reject a normal txPrebuild from the bitgo server with the wrong amount', async function () {

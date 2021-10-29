@@ -21,6 +21,7 @@ import { TradingAccount } from './trading/tradingAccount';
 import { NodeCallback } from './types';
 import { PendingApproval, PendingApprovalData } from './pendingApproval';
 import { RequestTracer } from './internal/util';
+import { getSharedSecret } from '../ecdh';
 
 const debug = debugLib('bitgo:v2:wallet');
 const co = Bluebird.coroutine;
@@ -80,7 +81,7 @@ export interface PrebuildTransactionOptions {
     targetWalletUnspents?: number;
     minValue?: number;
     maxValue?: number;
-    sequenceId?: number;
+    sequenceId?: string;
     lastLedgerSequence?: number;
     ledgerSequenceDelta?: string;
     gasPrice?: number;
@@ -331,7 +332,11 @@ export interface AccelerateTransactionOptions {
 export interface SubmitTransactionOptions {
   otp?: string;
   txHex?: string;
-  halfSigned?: string;
+  halfSigned?: {
+    txHex?: string; // Transaction in any format required by each coin, i.e. in Tron it is a stringifyed JSON
+    payload?: string;
+    txBase64?: string;
+  };
   comment?: string;
 }
 
@@ -365,7 +370,7 @@ export interface SendManyOptions {
   message?: string;
   minValue?: number;
   maxValue?: number;
-  sequenceId?: number;
+  sequenceId?: string;
   lastLedgerSequence?: number;
   ledgerSequenceDelta?: string;
   gasPrice?: number;
@@ -1583,7 +1588,7 @@ export class Wallet {
             }
 
             const eckey = makeRandomKey();
-            const secret = self.bitgo.getECDHSecret({ eckey: eckey, otherPubKeyHex: sharing.pubkey });
+            const secret = getSharedSecret(eckey, Buffer.from(sharing.pubkey, 'hex')).toString('hex');
             const newEncryptedPrv = self.bitgo.encrypt({ password: secret, input: keychain.prv });
 
             sharedKeychain = {

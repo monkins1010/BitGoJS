@@ -35,8 +35,7 @@ const MIN_MOTES_AMOUNT = new BigNumber(2500000000);
  */
 export function getAccountHash(keys: DefaultKeys): Uint8Array {
   const publicKey = Buffer.from(keys.pub, 'hex'); // first two characters identify a public key
-  const privateKey = keys.prv ? Buffer.from(keys.prv, 'hex') : undefined;
-  return new Keys.Secp256K1(publicKey, privateKey!).accountHash();
+  return Keys.Secp256K1.accountHash(publicKey);
 }
 
 /**
@@ -74,9 +73,11 @@ export function isValidHex(hex: string): boolean {
  * @returns {boolean} true if address is valid
  */
 export function isValidEd25519Address(address: string): boolean {
-  return isValidHex(address) &&
+  return (
+    isValidHex(address) &&
     address.startsWith(ED25519_PREFIX) &&
-    Crypto.isValidEd25519PublicKey(address.slice(ED25519_PREFIX.length));
+    Crypto.isValidEd25519PublicKey(address.slice(ED25519_PREFIX.length))
+  );
 }
 
 /**
@@ -85,9 +86,11 @@ export function isValidEd25519Address(address: string): boolean {
  * @returns {boolean} true if address is valid
  */
 export function isValidSecp256k1Address(address: string): boolean {
-  return isValidHex(address) &&
+  return (
+    isValidHex(address) &&
     address.startsWith(SECP256K1_PREFIX) &&
-    Crypto.isValidPub(address.slice(SECP256K1_PREFIX.length));
+    Crypto.isValidPub(address.slice(SECP256K1_PREFIX.length))
+  );
 }
 
 /**
@@ -126,7 +129,7 @@ export function getAddressDetails(address: string): AddressDetails {
     throw new UtilsError(`invalid address with transfer id: ${address}`);
   }
   const transferId = <string>queryDetails.transferId;
-  if (isNaN(parseInt(transferId))) {
+  if (isNaN(parseInt(transferId, 10))) {
     throw new UtilsError(`invalid transfer id: ${transferId}`);
   }
 
@@ -147,7 +150,7 @@ export function normalizeAddress({ address, transferId }: AddressDetails): strin
     throw new UtilsError(`invalid address: ${address}`);
   }
   if (!_.isUndefined(transferId)) {
-    if (isNaN(parseInt(transferId))) {
+    if (isNaN(parseInt(transferId, 10))) {
       throw new Error(`invalid transfer id: ${transferId}`);
     }
     return `${address}?transferId=${transferId}`;
@@ -270,10 +273,7 @@ export function getTransferId(transferTx: DeployUtil.ExecutableDeployItem): numb
   if (transferIdOption.isNone()) {
     return; // no-op
   }
-  return transferIdOption
-    .getSome()
-    .asBigNumber()
-    .toNumber();
+  return transferIdOption.getSome().asBigNumber().toNumber();
 }
 
 /**
@@ -369,9 +369,7 @@ export function signMessage(keyPair: KeyPair, data: string): SignResponse {
   if (!prv) {
     throw new SigningError('Missing private key');
   }
-  const encodedData = createHash('sha256')
-    .update(hex.decode(data))
-    .digest('hex');
+  const encodedData = createHash('sha256').update(hex.decode(data)).digest('hex');
   return ecdsaSign(hex.decode(encodedData), hex.decode(prv));
 }
 
@@ -390,11 +388,7 @@ function isValidSignature(signature: string, data: Uint8Array | string, publicKe
     if (typeof data === 'string') {
       data = hex.decode(data);
     }
-    data = hex.decode(
-      createHash('sha256')
-        .update(data)
-        .digest('hex'),
-    );
+    data = hex.decode(createHash('sha256').update(data).digest('hex'));
     return ecdsaVerify(signatureBytes, data, rawPublicKey);
   } catch (e) {
     return false;

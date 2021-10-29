@@ -23,7 +23,7 @@ import { InvalidAddressError } from '../../errors';
 
 const co = Bluebird.coroutine;
 
-// eslint-disable-next-line no-unused-vars
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface SupplementGenerateWalletOptions {
   rootPrivateKey?: string;
 }
@@ -200,7 +200,7 @@ export class Stx extends BaseCoin {
   }
 
   parseTransaction(params: any, callback?: NodeCallback<any>): Bluebird<any> {
-    throw new Error('Method not implemented.');
+    return Bluebird.resolve({}).asCallback(callback);
   }
 
   /**
