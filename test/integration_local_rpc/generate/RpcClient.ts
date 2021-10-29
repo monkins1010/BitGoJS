@@ -1,13 +1,15 @@
 /**
  * @prettier
  */
+import * as assert from 'assert';
 import axios, { AxiosError } from 'axios';
 import buildDebug from 'debug';
 
-const utxolib = require('../../../src');
-const coins = require('../../../src/coins');
+import { Network } from '../../../src/networkTypes';
+import { getMainnet, getNetworkName, isZcashCompatible } from '../../../src/coins';
+import { RpcTransaction } from './RpcTypes';
 
-import { Network } from './types';
+const utxolib = require('../../../src');
 
 const debug = buildDebug('RpcClient');
 
@@ -81,8 +83,8 @@ export class RpcClient {
     return Buffer.from(await this.exec<string>('getrawtransaction', txid), 'hex');
   }
 
-  async getRawTransactionVerbose(txid: string): Promise<unknown> {
-    let verbose = coins.isZcashCompatible(this.network) ? 1 : true;
+  async getRawTransactionVerbose(txid: string): Promise<RpcTransaction> {
+    const verbose = isZcashCompatible(this.network) ? 1 : true;
     return await this.exec('getrawtransaction', txid, verbose);
   }
 
@@ -91,7 +93,8 @@ export class RpcClient {
   }
 
   static async fromEnvvar(network: Network): Promise<RpcClient> {
-    const networkName = coins.getNetworkName(network);
+    const networkName = getNetworkName(network);
+    assert(networkName);
     const envKey = 'RPC_' + networkName.toUpperCase();
     const url = process.env[envKey];
     if (url === undefined) {
@@ -102,7 +105,7 @@ export class RpcClient {
   }
 
   static getSupportedNodeVersions(network: Network): string[] {
-    switch (coins.getMainnet(network)) {
+    switch (getMainnet(network)) {
       case utxolib.networks.bitcoin:
         return ['/Satoshi:0.20.0/', '/Satoshi:0.21.1/'];
       case utxolib.networks.bitcoincash:
@@ -123,7 +126,7 @@ export class RpcClient {
   }
 
   static async forUrl(network: Network, url: string) {
-    const networkName = coins.getNetworkName(network);
+    const networkName = getNetworkName(network);
     const rpcClient = new RpcClient(network, url);
     const networkinfo = await rpcClient.getNetworkInfo();
 

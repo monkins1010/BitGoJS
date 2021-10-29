@@ -1,6 +1,6 @@
 {
   "name": "@bitgo/utxo-lib",
-  "version": "1.9.5",
+  "version": "1.9.6",
   "description": "Client-side Bitcoin JavaScript library",
   "main": "./src/index.js",
   "engines": {
@@ -21,7 +21,7 @@
     "build": "tsc --project tsconfig.build.json",
     "coverage-report": "nyc report --reporter=lcov",
     "coverage-html": "nyc report --reporter=html",
-    "coverage": "npm run build && BITGO_UTXO_LIB_TEST_EXPECTED_COUNT=3539 nyc --check-coverage --branches 89 --functions 90 mocha",
+    "coverage": "npm run build && BITGO_UTXO_LIB_TEST_EXPECTED_COUNT=3594 nyc --check-coverage --branches 88 --functions 90 mocha",
     "integration-test": "mocha test/integration/",
     "standard": "standard",
     "test": "npm run standard && npm run coverage",
@@ -29,13 +29,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/BitGo/bitgo-utxo-lib.git"
+    "url": "https://github.com/BitGo/BitGoJS.git",
+    "directory": "modules/utxo-lib"
   },
   "files": [
     "dist/src"
   ],
   "dependencies": {
-    "@bitgo/blake2b": "^3.0.0",
+    "@bitgo/blake2b": "^3.0.1",
     "bech32": "0.0.3",
     "bigi": "^1.4.0",
     "bip66": "^1.1.0",

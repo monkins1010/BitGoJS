@@ -4,7 +4,9 @@
 import * as assert from 'assert';
 
 const utxolib = require('../../../src');
-const coins = require('../../../src/coins');
+
+import { Network } from '../../../src/networkTypes';
+import { getMainnet, getNetworkName, isTestnet } from '../../../src/coins';
 
 import { getRegtestNode, getRegtestNodeUrl, Node } from './regtestNode';
 import {
@@ -16,17 +18,24 @@ import {
   ScriptType,
   scriptTypes,
 } from './outputScripts.util';
-import { Network } from './types';
 import { RpcClient } from './RpcClient';
-import { wipeFixtures, writeFixture } from './fixtures';
+import { fixtureKeys, wipeFixtures, writeTransactionFixtureWithInputs } from './fixtures';
+import { isScriptType2Of3 } from '../../../src/bitgo/outputScripts';
 
 async function initBlockchain(rpc: RpcClient, network: Network): Promise<void> {
+  let minBlocks = 300;
   switch (network) {
     case utxolib.networks.testnet:
       await rpc.createWallet('utxolibtest');
+      break;
+    case utxolib.networks.bitcoingoldTestnet:
+      // The actual BTC/BTG fork flag only gets activated at this height.
+      // On mainnet the height was at 491407 (Around 10/25/2017 12:00 UTC)
+      // Prior to that, signatures that use the BIP143 sighash flag are invalid.
+      // https://github.com/BTCGPU/BTCGPU/blob/71894be9/src/chainparams.cpp#L371
+      minBlocks = 2001;
   }
 
-  const minBlocks = 300;
   const diff = minBlocks - (await rpc.getBlockCount());
 
   if (diff > 0) {
@@ -36,7 +45,7 @@ async function initBlockchain(rpc: RpcClient, network: Network): Promise<void> {
   }
 }
 
-function toRegtestAddress(network: Network, scriptType: ScriptType, script: Buffer): string {
+function toRegtestAddress(network: { bech32?: string }, scriptType: ScriptType, script: Buffer): string {
   if (scriptType === 'p2wsh' || scriptType === 'p2wkh') {
     switch (network) {
       case utxolib.networks.testnet:
@@ -58,28 +67,27 @@ async function createTransactionsForScriptType(
   scriptType: ScriptType,
   network: Network
 ): Promise<void> {
-  const logTag = `createTransaction ${scriptType} ${coins.getNetworkName(network)}`;
+  const logTag = `createTransaction ${scriptType} ${getNetworkName(network)}`;
   if (!isSupportedDepositType(network, scriptType)) {
     console.log(logTag + ': not supported, skipping');
     return;
   }
   console.log(logTag);
 
-  const keys = getKeyTriple('rpctest');
-  const script = createScriptPubKey(keys, scriptType, network);
+  const script = createScriptPubKey(fixtureKeys, scriptType, network);
   const address = toRegtestAddress(network, scriptType, script);
   const depositTxid = await rpc.sendToAddress(address, 1);
   const depositTx = await rpc.getRawTransaction(depositTxid);
-  await writeFixture(network, `deposit_${scriptType}.json`, await rpc.getRawTransactionVerbose(depositTxid));
-  if (!isSupportedSpendType(network, scriptType)) {
+  await writeTransactionFixtureWithInputs(rpc, network, `deposit_${scriptType}.json`, depositTxid);
+  if (!isScriptType2Of3(scriptType) || !isSupportedSpendType(network, scriptType)) {
     console.log(logTag + ': spend not supported, skipping spend');
     return;
   }
 
-  const spendTx = createSpendTransaction(keys, scriptType, depositTxid, depositTx, script, network);
+  const spendTx = createSpendTransaction(fixtureKeys, scriptType, depositTxid, depositTx, script, network);
   const spendTxid = await rpc.sendRawTransaction(spendTx.toBuffer());
   assert.strictEqual(spendTxid, spendTx.getId());
-  await writeFixture(network, `spend_${scriptType}.json`, await rpc.getRawTransactionVerbose(spendTxid));
+  await writeTransactionFixtureWithInputs(rpc, network, `spend_${scriptType}.json`, spendTxid);
 }
 
 async function createTransactions(rpc: RpcClient, network: Network) {
@@ -104,7 +112,7 @@ async function run(network: Network) {
     await initBlockchain(rpc, network);
     await createTransactions(rpc, network);
   } catch (e) {
-    console.error(`error for network ${coins.getNetworkName(network)}`);
+    console.error(`error for network ${getNetworkName(network)}`);
     throw e;
   } finally {
     if (node) {
@@ -113,10 +121,23 @@ async function run(network: Network) {
   }
 }
 
-async function main() {
+async function main(args: string[]) {
+  const allowedNetworks = args.map((name) => {
+    const network = utxolib.networks[name];
+    if (!network) {
+      throw new Error(`invalid network ${name}`);
+    }
+    return getMainnet(network);
+  });
+
   for (const networkName of Object.keys(utxolib.networks)) {
     const network = utxolib.networks[networkName];
-    if (!coins.isTestnet(network)) {
+    if (!isTestnet(network)) {
+      continue;
+    }
+
+    if (allowedNetworks.length && !allowedNetworks.some((n) => n === getMainnet(network))) {
+      console.log(`skipping ${networkName}`);
       continue;
     }
 
@@ -125,7 +146,7 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((e) => {
+  main(process.argv.slice(2)).catch((e) => {
     console.error(e);
     process.exit(1);
   });
