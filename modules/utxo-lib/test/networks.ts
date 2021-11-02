@@ -219,8 +219,7 @@ describe('networks', function () {
             network.wif === otherNetwork.wif,
             sameGroup(bitcoinMainnetSharedWIFPrefix, network, otherNetwork) ||
             sameGroup(bitcoinTestnetSharedWIFPrefix, network, otherNetwork) ||
-            sameGroup(verusSharedWIFPrefix, network, otherNetwork) ||
-            sameGroup(coins.isTestnet, network, otherNetwork)
+            sameGroup(verusSharedWIFPrefix, network, otherNetwork)
           )
         })
       }
