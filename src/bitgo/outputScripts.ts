@@ -1,8 +1,8 @@
 /**
  * @prettier
  */
-import * as script from '../script';
-import * as crypto from '../crypto';
+const script = require("../script");
+const crypto = require("../crypto");
 
 export const scriptTypes2Of3 = ['p2sh', 'p2shP2wsh', 'p2wsh'] as const;
 export type ScriptType2Of3 = typeof scriptTypes2Of3[number];
