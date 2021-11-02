@@ -1,13 +1,13 @@
 /**
  * @prettier
  */
-import * as opcodes from 'bitcoin-ops';
+const opcodes = require('bitcoin-ops');
 
-import * as script from '../script';
-import * as crypto from '../crypto';
-import * as ECPair from '../ecpair';
-import * as Transaction from '../transaction';
-import * as ECSignature from '../ecsignature';
+const script = require("../script");
+const crypto = require("../crypto");
+const ECPair = require("../ecpair");
+const Transaction = require("../transaction");
+const ECSignature = require("../ecsignature");
 import { Network } from '../networkTypes';
 import * as networks from '../networks';
 import { getMainnet } from '../coins';
@@ -156,7 +156,7 @@ export function parseSignatureScript(input: Input): ParsedSignatureScript {
  * @returns {boolean}
  */
 export function verifySignature(
-  transaction: Transaction,
+  transaction: typeof Transaction,
   inputIndex: number,
   amount: number,
   verificationSettings: {
@@ -220,7 +220,6 @@ export function verifySignature(
     signaturesToCheck = [nonEmptySignatures[verificationSettings.signatureIndex]];
   }
 
-  const matchedPublicKeyIndices = {};
   let areAllSignaturesValid = true;
 
   // go over all signatures
@@ -244,6 +243,8 @@ export function verifySignature(
         isSegwitInput
       );
 
+      let matchedPublicKeyIndices = (new Array<boolean>(publicKeys.length)).fill(false);
+      
       for (let publicKeyIndex = 0; publicKeyIndex < publicKeys.length; publicKeyIndex++) {
         const publicKeyBuffer = publicKeys[publicKeyIndex];
         if (verificationSettings.publicKey !== undefined && !publicKeyBuffer.equals(verificationSettings.publicKey)) {
