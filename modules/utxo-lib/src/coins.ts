@@ -2,7 +2,7 @@
  * @prettier
  */
 import * as networks from './networks';
-import { coins, Network, PBaaSNetwork, ZcashNetwork } from './networkTypes';
+import { coins, Network, NetworkName, PBaaSNetwork } from './networkTypes';
 
 const typeforce = require('typeforce');
 
@@ -10,16 +10,19 @@ const typeforce = require('typeforce');
  * @returns {Network[]} all known networks as array
  */
 export function getNetworkList(): Network[] {
-  return Object.keys(networks).map((n) => networks[n]);
+  return Object.keys(networks).map((n) => networks[<NetworkName>n]);
 }
 
 /**
  * @param {Network} network
- * @returns {string} the name of the network. Returns undefined if network is not a value
+ * @returns {NetworkName} the name of the network. Returns undefined if network is not a value
  *                   of `networks`
  */
-export function getNetworkName(network: Network): string | undefined {
-  return Object.keys(networks).find((n) => networks[n] === network);
+export function getNetworkName(network: Network): NetworkName | undefined {
+  const nameStringOrUndefined = Object.keys(networks).find((n) => networks[<NetworkName>n] === network);
+
+  if (typeof nameStringOrUndefined === 'string') return <NetworkName>nameStringOrUndefined
+  else return undefined
 }
 
 /**
@@ -210,7 +213,7 @@ export function isPBaaS (network: Network) {
  * @param {Network} network
  * @returns {boolean} true iff network is zcash compatible
  */
-export function isZcashCompatible (network) {
+export function isZcashCompatible (network: Network) {
   return isZcash(network) || isPBaaS(network) || isKomodo(network)
 }
 
@@ -218,7 +221,7 @@ export function isZcashCompatible (network) {
  * @param {Network} network
  * @returns {boolean} true iff network is Komodo
  */
-export  function isKomodo (network) {
+export  function isKomodo (network: Network) {
   return getMainnet(network) === networks.kmd
 }
 
@@ -226,7 +229,7 @@ export  function isKomodo (network) {
  * @param {Network} network
  * @returns {boolean} true iff network is Doge
  */
-export  function isDoge (network) {
+export  function isDoge (network: Network) {
   return getMainnet(network) === networks.doge
 }
 
@@ -234,7 +237,7 @@ export  function isDoge (network) {
  * @param {Network} network
  * @returns {boolean} true iff network is Digibyte
  */
-export  function isDigibyte (network) {
+export  function isDigibyte (network: Network) {
   return getMainnet(network) === networks.digibyte
 }
 

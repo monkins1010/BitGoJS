@@ -27,6 +27,27 @@ export function getFixtureInfo(network: Network): FixtureInfo {
         projectPath: 'bitcoin/bitcoin',
         tag: 'v0.21.1',
       };
+    case networks.verus:
+    case networks.default:
+      return {
+        projectPath: 'VerusCoin/VerusCoin',
+        tag: 'v0.8.0-5',
+      };
+    case networks.digibyte:
+      return {
+        projectPath: 'DigiByte-Core/digibyte',
+        tag: 'v7.17.3',
+      };
+    case networks.doge:
+      return {
+        projectPath: 'dogecoin/dogecoin',
+        tag: 'v1.14.4',
+      };
+    case networks.kmd:
+      return {
+        projectPath: 'KomodoPlatform/komodo',
+        tag: 'v0.7.1',
+      };
     case networks.bitcoincash:
       return {
         projectPath: 'bitcoin-cash-node/bitcoin-cash-node',
