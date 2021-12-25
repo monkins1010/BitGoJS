@@ -4,7 +4,7 @@ var bscript = require('../../script')
 var types = require('../../types')
 var typeforce = require('typeforce')
 var OPS = require('bitcoin-ops')
-const networks = require('../../networks.ts')
+const networks = require('../../networks')
 var OP_INT_BASE = OPS.OP_RESERVED // OP_1 - 1
 
 function varSliceSize(varSlice)
