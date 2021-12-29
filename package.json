@@ -25,6 +25,8 @@
   ],
   "scripts": {
     "postinstall": "lerna run build --stream",
+    "split-utxo-lib": "git subtree split --squash --prefix=modules/utxo-lib -b utxo-lib-verus",
+    "push-utxo-lib": "git checkout utxo-lib-verus && git push --set-upstream origin utxo-lib-verus",
     "gen-drone": "chmod 0666 .drone.yml && drone jsonnet --stream && drone sign BitGo/BitGoJS --save && chmod 0444 .drone.yml",
     "audit": "yarn audit --group dependencies optionalDependencies peerDependencies ; test $? -lt 8",
     "audit-dev": "yarn audit --group devDependencies ; test $? -lt 8",
