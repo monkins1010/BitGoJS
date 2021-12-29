@@ -68,9 +68,14 @@ class SmartObject
 */
 class VerusIdentity
 {
-  get PBaaSVer()
+  get VaultVer()
   {
     return 6
+  }
+
+  get PBaaSVer()
+  {
+    return 7
   }
 
   get IDVer()
@@ -80,13 +85,17 @@ class VerusIdentity
 
   IdVersionFromSolution(SolVer)
   {
-    if (SolVer < PBaaSVer())
+    if (SolVer < VaultVer())
     {
       return 1
     }
-    else
+    else if (SolVer < PBaaSVer())
     {
       return 2;
+    }
+    else
+    {
+      return 3;
     }
   }
 
