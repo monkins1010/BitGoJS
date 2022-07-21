@@ -15,6 +15,10 @@ module.exports = {
   HDNode: require('./hdnode'),
   Transaction: require('./transaction'),
   TransactionBuilder: require('./transaction_builder'),
+  SmartTransactionSignatures: require('./smart_transaction_signatures'),
+  SmartTransactionSignature: require('./smart_transaction_signature'),
+  TxDestination: require('./tx_destination'),
+  OptCCParams: require('./optccparams'),
 
   address: require('./address'),
   coins: require('./coins'),
