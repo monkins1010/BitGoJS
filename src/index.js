@@ -19,6 +19,7 @@ module.exports = {
   SmartTransactionSignature: require('./smart_transaction_signature'),
   TxDestination: require('./tx_destination'),
   OptCCParams: require('./optccparams'),
+  IdentitySignature: require('./identity_signature'),
 
   address: require('./address'),
   coins: require('./coins'),
