@@ -8,8 +8,9 @@ const {
   networks
 } = require('../../../src')
 
-describe('VerusID Signer and Verifier (verustest)', function () {
+describe.only('VerusID Signer and Verifier (verustest)', function () {
   var network = networks['verustest']
+  const keyPair = ECPair.fromWIF('UrEJQMk9PD4Fo9i8FNb1ZSFRrC9TrD4j6CGbFvbFHVH83bStroHH', network)
 
   it("Sign and verify message with VerusID version 1 signatures", function () {
     const version = 1;
@@ -19,11 +20,10 @@ describe('VerusID Signer and Verifier (verustest)', function () {
     const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";
     const iAddress = "i8jHXEEYEQ7KEoYe6eKXBib8cUBZ6vjWSd";
     const msg = "signedmessage"
-    const keyPair = ECPair.fromWIF('UrEJQMk9PD4Fo9i8FNb1ZSFRrC9TrD4j6CGbFvbFHVH83bStroHH', network)
 
-    const sig = new IdentitySignature(version, hashType, blockHeight, signatures, chainId, iAddress)
+    const sig = new IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress)
     sig.signMessageOffline(msg, keyPair)
-    const verificationResult = sig.verifyMessageOffline(msg, keyPair)
+    const verificationResult = sig.verifyMessageOffline(msg, keyPair.getAddress())[0]
 
     assert.equal(
       sig.toBuffer().toString("base64"),
@@ -33,10 +33,11 @@ describe('VerusID Signer and Verifier (verustest)', function () {
   });
 
   it("Verify version 1 signature", function () {
-    const sig = new IdentitySignature()
+    const sig = new IdentitySignature(network)
     const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";
     const iAddress = "i8jHXEEYEQ7KEoYe6eKXBib8cUBZ6vjWSd";
     const msg = "signedmessage"
+    const wrongmsg = "notsignedmessage"
 
     sig.fromBuffer(
       Buffer.from(
@@ -48,24 +49,21 @@ describe('VerusID Signer and Verifier (verustest)', function () {
       iAddress
     );
 
+    //DELET
+    console.log(sig.toBuffer().toString('base64'))
+
     assert.equal(
       sig.verifyMessageOffline(
         msg,
-        ECPair.fromPublicKeyBuffer(
-          Buffer.from("032590d45225afaffdc2019af4d8b9ce670663fbec7b45752ecbe3ba9ce76369ae", "hex"),
-          network
-        )
-      ),
+        keyPair.getAddress()
+      )[0],
       true
     );
     assert.equal(
       sig.verifyMessageOffline(
-        msg,
-        ECPair.fromPublicKeyBuffer(
-          Buffer.from("031b37caff743cddcf50089b294ea48b63abe983f15c3047e47307f6004a97dd19", "hex"),
-          network
-        )
-      ),
+        wrongmsg,
+        keyPair.getAddress()
+      )[0],
       false
     );
   });

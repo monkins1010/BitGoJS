@@ -155,6 +155,25 @@ describe('ECPair', function () {
     })
   })
 
+  describe('recover', function () {
+    var keyPair, hash, sig
+
+    beforeEach(function () {
+      keyPair = ECPair.makeRandom()
+      hash = Buffer.alloc(32)
+      sig = keyPair.sign(hash)
+    })
+
+    fixtures.valid.forEach(function (f) {
+      it('recovers valid pubkey for signature by' + f.WIF + ' (' + f.network + ')', function () {
+        var network = NETWORKS[f.network]
+        const pubKeyPair = ECPair.recoverFromSignature(hash, sig.toCompact(0, true), network)
+
+        assert.strictEqual(pubKeyPair.verify(hash, sig), true)
+      })
+    })
+  })
+
   describe('toWIF', function () {
     fixtures.valid.forEach(function (f) {
       it('exports ' + f.WIF, function () {

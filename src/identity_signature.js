@@ -5,6 +5,7 @@ var { fromBase58Check } = require('./address');
 var { sha256 } = require('./crypto');
 var createHash = require('create-hash')
 var ECSignature = require('./ecsignature')
+var ECPair = require('./ecpair')
 
 const VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n"
 
@@ -17,27 +18,28 @@ bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
 const VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
 
 class IdentitySignature {
-  constructor(version = 1, hashType = 1, blockHeight = 0, signatures, chainId, iAddress) {
+  constructor(network, version = 1, hashType = 1, blockHeight = 0, signatures, chainId, iAddress) {
     this.version = version;
     this.hashType = hashType;
     this.blockHeight = blockHeight;
     this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
     this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
+    this.network = network;
 
     if (signatures != null) {
       this.signatures = signatures;
     } else {
-      this.signatures = null;
+      this.signatures = [];
     }
   }
 
   hashMessage(msg) {
-    const rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf8")
+    const rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf8");
     var msgBufferWriter = new bufferutils.BufferWriter(
       Buffer.allocUnsafe(varuint.encodingLength(msg.length) + msg.length)
     );
 
-    msgBufferWriter.writeVarSlice(rawMsgBuffer)
+    msgBufferWriter.writeVarSlice(rawMsgBuffer);
 
     const _msgHash = sha256(msgBufferWriter.buffer);
 
@@ -54,28 +56,46 @@ class IdentitySignature {
   }
 
   signMessageOffline(msg, keyPair) {
-    if (this.version !== 1) throw new Error("Versions above 1 not supported")
+    if (this.version !== 1) throw new Error("Versions above 1 not supported");
 
     var signature = keyPair.sign(this.hashMessage(msg));
     if (Buffer.isBuffer(signature)) signature = ECSignature.fromRSBuffer(signature);
 
     const compactSig = signature.toCompact(0, true);
 
-    this.signatures = compactSig;
+    this.signatures.push(compactSig)
 
     return compactSig;
   }
 
-  // In this case keyPair refers to the ECPair containing at minimum 
-  // a pubkey
-  verifyMessageOffline(msg, keyPair) {
-    if (this.version !== 1) throw new Error("Versions above 1 not supported")
-    if (this.signatures == null) throw new Error("No signatures to verify")
+  // In this case keyPair refers to the ECPair containing at minimum
+  // a pubkey. This function returns an array of booleans indicating which
+  // signatures passed and failed
+  verifyMessageOffline(msg, signingAddress) {
+    if (this.version !== 1) throw new Error("Versions above 1 not supported");
+    if (this.signatures.length == 0) throw new Error("No signatures to verify");
+    const results = [];
 
-    return keyPair.verify(
-      this.hashMessage(msg),
-      ECSignature.parseCompact(this.signatures).signature
-    );
+    for (let i = 0; i < this.signatures.length; i++) {
+      try {
+        const sig = ECSignature.parseCompact(this.signatures[i]);
+        const hash = this.hashMessage(msg);
+
+        const pubKeyPair = ECPair.recoverFromSignature(hash, sig.signature.toCompact(sig.i, true), this.network);
+
+        if (pubKeyPair.getAddress() === signingAddress) {
+          const verification = pubKeyPair.verify(hash, sig.signature);
+          results.push(verification);
+        } else {
+          results.push(false);
+        }
+      } catch (e) {
+        console.log(e)
+        results.push(false);
+      }
+    }
+
+    return results;
   }
 
   fromBuffer(buffer, initialOffset, chainId, iAddress) {
@@ -85,18 +105,24 @@ class IdentitySignature {
     this.blockHeight = bufferReader.readUInt32();
     const numSigs = bufferReader.readUInt8();
 
-    if (numSigs !== 1) throw new Error("Multiple signatures is not currently supported")
-
     this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
     this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
 
-    this.signatures = bufferReader.readVarSlice();
+    for (let i = 0; i < numSigs; i++) {
+      this.signatures.push(bufferReader.readVarSlice())
+    }
 
     return bufferReader.offset;
   }
 
   __byteLength() {
-    return 6 + varuint.encodingLength(this.signatures.length) + this.signatures.length;
+    let totalSigLength = 0
+
+    this.signatures.forEach((sig) => {
+      totalSigLength += sig.length;
+    });
+
+    return 6 + varuint.encodingLength(this.signatures.length) + totalSigLength;
   }
 
   toBuffer(buffer, initialOffset) {
@@ -107,8 +133,11 @@ class IdentitySignature {
     //bufferWriter.writeUInt8(this.version);
     bufferWriter.writeUInt8(this.version);
     bufferWriter.writeUInt32(this.blockHeight);
-    bufferWriter.writeUInt8(1); // num signatures
-    bufferWriter.writeVarSlice(this.signatures);
+    bufferWriter.writeUInt8(this.signatures.length); // num signatures
+
+    for (const sig of this.signatures) {
+      bufferWriter.writeVarSlice(sig);
+    }
 
     // avoid slicing unless necessary
     if (initialOffset !== undefined)
