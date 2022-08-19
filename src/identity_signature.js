@@ -6,6 +6,7 @@ var { sha256 } = require('./crypto');
 var createHash = require('create-hash')
 var ECSignature = require('./ecsignature')
 var ECPair = require('./ecpair')
+var BigInteger = require('bigi')
 
 const VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n"
 
@@ -61,7 +62,8 @@ class IdentitySignature {
     var signature = keyPair.sign(this.hashMessage(msg));
     if (Buffer.isBuffer(signature)) signature = ECSignature.fromRSBuffer(signature);
 
-    const compactSig = signature.toCompact(0, true);
+    const recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0]
+    const compactSig = signature.toCompact(recid, true);
 
     this.signatures.push(compactSig)
 
