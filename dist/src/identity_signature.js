@@ -5,12 +5,13 @@ var fromBase58Check = require('./address').fromBase58Check;
 var sha256 = require('./crypto').sha256;
 var createHash = require('create-hash');
 var ECSignature = require('./ecsignature');
+var ECPair = require('./ecpair');
 var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
 var bufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
 var VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
 var IdentitySignature = /** @class */ (function () {
-    function IdentitySignature(version, hashType, blockHeight, signatures, chainId, iAddress) {
+    function IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress) {
         if (version === void 0) { version = 1; }
         if (hashType === void 0) { hashType = 1; }
         if (blockHeight === void 0) { blockHeight = 0; }
@@ -19,11 +20,12 @@ var IdentitySignature = /** @class */ (function () {
         this.blockHeight = blockHeight;
         this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
         this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
+        this.network = network;
         if (signatures != null) {
             this.signatures = signatures;
         }
         else {
-            this.signatures = null;
+            this.signatures = [];
         }
     }
     IdentitySignature.prototype.hashMessage = function (msg) {
@@ -48,32 +50,56 @@ var IdentitySignature = /** @class */ (function () {
         if (Buffer.isBuffer(signature))
             signature = ECSignature.fromRSBuffer(signature);
         var compactSig = signature.toCompact(0, true);
-        this.signatures = compactSig;
+        this.signatures.push(compactSig);
         return compactSig;
     };
-    // In this case keyPair refers to the ECPair containing at minimum 
-    // a pubkey
-    IdentitySignature.prototype.verifyMessageOffline = function (msg, keyPair) {
+    // In this case keyPair refers to the ECPair containing at minimum
+    // a pubkey. This function returns an array of booleans indicating which
+    // signatures passed and failed
+    IdentitySignature.prototype.verifyMessageOffline = function (msg, signingAddress) {
         if (this.version !== 1)
             throw new Error("Versions above 1 not supported");
-        if (this.signatures == null)
+        if (this.signatures.length == 0)
             throw new Error("No signatures to verify");
-        return keyPair.verify(this.hashMessage(msg), ECSignature.parseCompact(this.signatures).signature);
+        var results = [];
+        for (var i = 0; i < this.signatures.length; i++) {
+            try {
+                var sig = ECSignature.parseCompact(this.signatures[i]);
+                var hash = this.hashMessage(msg);
+                var pubKeyPair = ECPair.recoverFromSignature(hash, sig.signature.toCompact(sig.i, true), this.network);
+                if (pubKeyPair.getAddress() === signingAddress) {
+                    var verification = pubKeyPair.verify(hash, sig.signature);
+                    results.push(verification);
+                }
+                else {
+                    results.push(false);
+                }
+            }
+            catch (e) {
+                console.log(e);
+                results.push(false);
+            }
+        }
+        return results;
     };
     IdentitySignature.prototype.fromBuffer = function (buffer, initialOffset, chainId, iAddress) {
         var bufferReader = new bufferutils.BufferReader(buffer, initialOffset || 0);
         this.version = bufferReader.readUInt8();
         this.blockHeight = bufferReader.readUInt32();
         var numSigs = bufferReader.readUInt8();
-        if (numSigs !== 1)
-            throw new Error("Multiple signatures is not currently supported");
         this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
         this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
-        this.signatures = bufferReader.readVarSlice();
+        for (var i = 0; i < numSigs; i++) {
+            this.signatures.push(bufferReader.readVarSlice());
+        }
         return bufferReader.offset;
     };
     IdentitySignature.prototype.__byteLength = function () {
-        return 6 + varuint.encodingLength(this.signatures.length) + this.signatures.length;
+        var totalSigLength = 0;
+        this.signatures.forEach(function (sig) {
+            totalSigLength += sig.length;
+        });
+        return 6 + varuint.encodingLength(this.signatures.length) + totalSigLength;
     };
     IdentitySignature.prototype.toBuffer = function (buffer, initialOffset) {
         var noBuffer = !buffer;
@@ -83,8 +109,11 @@ var IdentitySignature = /** @class */ (function () {
         //bufferWriter.writeUInt8(this.version);
         bufferWriter.writeUInt8(this.version);
         bufferWriter.writeUInt32(this.blockHeight);
-        bufferWriter.writeUInt8(1); // num signatures
-        bufferWriter.writeVarSlice(this.signatures);
+        bufferWriter.writeUInt8(this.signatures.length); // num signatures
+        for (var _i = 0, _a = this.signatures; _i < _a.length; _i++) {
+            var sig = _a[_i];
+            bufferWriter.writeVarSlice(sig);
+        }
         // avoid slicing unless necessary
         if (initialOffset !== undefined)
             return noBuffer
