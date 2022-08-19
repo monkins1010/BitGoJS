@@ -49,9 +49,6 @@ describe.only('VerusID Signer and Verifier (verustest)', function () {
       iAddress
     );
 
-    //DELET
-    console.log(sig.toBuffer().toString('base64'))
-
     assert.equal(
       sig.verifyMessageOffline(
         msg,
