@@ -8,14 +8,14 @@ const {
   networks
 } = require('../../../src')
 
-describe.only('VerusID Signer and Verifier (verustest)', function () {
+describe('VerusID Signer and Verifier (verustest)', function () {
   var network = networks['verustest']
   const keyPair = ECPair.fromWIF('UrEJQMk9PD4Fo9i8FNb1ZSFRrC9TrD4j6CGbFvbFHVH83bStroHH', network)
 
   it("Sign and verify message with VerusID version 1 signatures", function () {
     const version = 1;
     const hashType = 1;
-    const blockHeight = 9710;
+    const blockHeight = 18167;
     const signatures = null;
     const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";
     const iAddress = "i8jHXEEYEQ7KEoYe6eKXBib8cUBZ6vjWSd";
@@ -27,7 +27,7 @@ describe.only('VerusID Signer and Verifier (verustest)', function () {
 
     assert.equal(
       sig.toBuffer().toString("base64"),
-      "Ae4lAAABQR/nlqcG/y90PPT3/SH435hmsrbv0GUEWlzR32Db5ynj/FfRfSt3SvbpRwlRAWNMOYgZkJFNeIgWnxKGXpJVpMc4"
+      "AfdGAAABQSDLWEju39WoEBsEmkzWLIoCjvGUhDkom/exPHNytst+vnYgBy7+z+eUOV5jFr5atSUkADYST7V2Ji0nxrg8C0Vv"
     );
     assert.equal(verificationResult, true);
   });
@@ -41,7 +41,7 @@ describe.only('VerusID Signer and Verifier (verustest)', function () {
 
     sig.fromBuffer(
       Buffer.from(
-        "Ae4lAAABQR/nlqcG/y90PPT3/SH435hmsrbv0GUEWlzR32Db5ynj/FfRfSt3SvbpRwlRAWNMOYgZkJFNeIgWnxKGXpJVpMc4",
+        "AfdGAAABQSDLWEju39WoEBsEmkzWLIoCjvGUhDkom/exPHNytst+vnYgBy7+z+eUOV5jFr5atSUkADYST7V2Ji0nxrg8C0Vv",
         "base64"
       ),
       0,

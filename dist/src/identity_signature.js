@@ -6,6 +6,7 @@ var sha256 = require('./crypto').sha256;
 var createHash = require('create-hash');
 var ECSignature = require('./ecsignature');
 var ECPair = require('./ecpair');
+var BigInteger = require('bigi');
 var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
 var bufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
@@ -49,7 +50,8 @@ var IdentitySignature = /** @class */ (function () {
         var signature = keyPair.sign(this.hashMessage(msg));
         if (Buffer.isBuffer(signature))
             signature = ECSignature.fromRSBuffer(signature);
-        var compactSig = signature.toCompact(0, true);
+        var recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0];
+        var compactSig = signature.toCompact(recid, true);
         this.signatures.push(compactSig);
         return compactSig;
     };
