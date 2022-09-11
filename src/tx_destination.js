@@ -113,7 +113,7 @@ class TxDestination
     }
     else
     {
-      this.destType = destByteVector.slice(0, 1).readUInt8()
+      this.destType = destByteVector.slice(0, 1).readUInt8(0)
       this.destinationBytes = destByteVector.slice(1)
     }
     return offset
@@ -123,11 +123,11 @@ class TxDestination
   {
     if (this.destType == this.typePKH)
     {
-      return 20;
+      return 21;
     }
     else if (this.destType == this.typePK)
     {
-      return 33
+      return 34;
     }
     else
     {
