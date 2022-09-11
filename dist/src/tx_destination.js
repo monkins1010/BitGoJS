@@ -139,17 +139,17 @@ var TxDestination = /** @class */ (function () {
             this.destinationBytes = destByteVector;
         }
         else {
-            this.destType = destByteVector.slice(0, 1).readUInt8();
+            this.destType = destByteVector.slice(0, 1).readUInt8(0);
             this.destinationBytes = destByteVector.slice(1);
         }
         return offset;
     };
     TxDestination.prototype.__byteLength = function () {
         if (this.destType == this.typePKH) {
-            return 20;
+            return 21;
         }
         else if (this.destType == this.typePK) {
-            return 33;
+            return 34;
         }
         else {
             return varuint.encodingLength(this.destinationBytes.length + 1) + this.destinationBytes.length + 1;

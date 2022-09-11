@@ -64,4 +64,29 @@ describe('VerusID Signer and Verifier (verustest)', function () {
       false
     );
   });
+
+  it("Reject signature with incorrect recid", function () {
+    const sig = new IdentitySignature(network)
+    const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";
+    const iAddress = "i8jHXEEYEQ7KEoYe6eKXBib8cUBZ6vjWSd";
+    const msg = "signedmessage"
+
+    sig.fromBuffer(
+      Buffer.from(
+        "AfdGAAABQR/LWEju39WoEBsEmkzWLIoCjvGUhDkom/exPHNytst+vnYgBy7+z+eUOV5jFr5atSUkADYST7V2Ji0nxrg8C0Vv",
+        "base64"
+      ),
+      0,
+      chainId,
+      iAddress
+    );
+
+    assert.equal(
+      sig.verifyMessageOffline(
+        msg,
+        keyPair.getAddress()
+      )[0],
+      false
+    );
+  });
 })
