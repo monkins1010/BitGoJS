@@ -45,9 +45,15 @@ var IdentitySignature = /** @class */ (function () {
             .digest();
     };
     IdentitySignature.prototype.signMessageOffline = function (msg, keyPair) {
+        return this.signHashOffline(this.hashMessage(msg), keyPair);
+    };
+    IdentitySignature.prototype.verifyMessageOffline = function (msg, signingAddress) {
+        return this.verifyHashOffline(this.hashMessage(msg), signingAddress);
+    };
+    IdentitySignature.prototype.signHashOffline = function (buffer, keyPair) {
         if (this.version !== 1)
             throw new Error("Versions above 1 not supported");
-        var signature = keyPair.sign(this.hashMessage(msg));
+        var signature = keyPair.sign(buffer);
         if (Buffer.isBuffer(signature))
             signature = ECSignature.fromRSBuffer(signature);
         var recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0];
@@ -58,7 +64,7 @@ var IdentitySignature = /** @class */ (function () {
     // In this case keyPair refers to the ECPair containing at minimum
     // a pubkey. This function returns an array of booleans indicating which
     // signatures passed and failed
-    IdentitySignature.prototype.verifyMessageOffline = function (msg, signingAddress) {
+    IdentitySignature.prototype.verifyHashOffline = function (hash, signingAddress) {
         if (this.version !== 1)
             throw new Error("Versions above 1 not supported");
         if (this.signatures.length == 0)
@@ -67,7 +73,6 @@ var IdentitySignature = /** @class */ (function () {
         for (var i = 0; i < this.signatures.length; i++) {
             try {
                 var sig = ECSignature.parseCompact(this.signatures[i]);
-                var hash = this.hashMessage(msg);
                 var pubKeyPair = ECPair.recoverFromSignature(hash, sig.signature.toCompact(sig.i, true), this.network);
                 if (pubKeyPair.getAddress() === signingAddress) {
                     var verification = pubKeyPair.verify(hash, sig.signature);

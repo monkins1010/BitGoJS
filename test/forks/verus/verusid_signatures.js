@@ -32,6 +32,28 @@ describe('VerusID Signer and Verifier (verustest)', function () {
     assert.equal(verificationResult, true);
   });
 
+  it("Sign and verify hash with VerusID version 1 signatures", function () {
+    const version = 1;
+    const hashType = 1;
+    const blockHeight = 18167;
+    const signatures = null;
+    const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";
+    const iAddress = "i8jHXEEYEQ7KEoYe6eKXBib8cUBZ6vjWSd";
+
+    const sig = new IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress)
+
+    const hash = sig.hashMessage("signedmessage")
+
+    sig.signHashOffline(hash, keyPair)
+    const verificationResult = sig.verifyHashOffline(hash, keyPair.getAddress())[0]
+
+    assert.equal(
+      sig.toBuffer().toString("base64"),
+      "AfdGAAABQSDLWEju39WoEBsEmkzWLIoCjvGUhDkom/exPHNytst+vnYgBy7+z+eUOV5jFr5atSUkADYST7V2Ji0nxrg8C0Vv"
+    );
+    assert.equal(verificationResult, true);
+  });
+
   it("Verify version 1 signature", function () {
     const sig = new IdentitySignature(network)
     const chainId = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq";

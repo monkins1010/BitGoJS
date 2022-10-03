@@ -57,9 +57,17 @@ class IdentitySignature {
   }
 
   signMessageOffline(msg, keyPair) {
+    return this.signHashOffline(this.hashMessage(msg), keyPair)
+  }
+
+  verifyMessageOffline(msg, signingAddress) {
+    return this.verifyHashOffline(this.hashMessage(msg), signingAddress)
+  }
+
+  signHashOffline(buffer, keyPair) {
     if (this.version !== 1) throw new Error("Versions above 1 not supported");
 
-    var signature = keyPair.sign(this.hashMessage(msg));
+    var signature = keyPair.sign(buffer);
     if (Buffer.isBuffer(signature)) signature = ECSignature.fromRSBuffer(signature);
 
     const recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0]
@@ -73,7 +81,7 @@ class IdentitySignature {
   // In this case keyPair refers to the ECPair containing at minimum
   // a pubkey. This function returns an array of booleans indicating which
   // signatures passed and failed
-  verifyMessageOffline(msg, signingAddress) {
+  verifyHashOffline(hash, signingAddress) {
     if (this.version !== 1) throw new Error("Versions above 1 not supported");
     if (this.signatures.length == 0) throw new Error("No signatures to verify");
     const results = [];
@@ -81,7 +89,6 @@ class IdentitySignature {
     for (let i = 0; i < this.signatures.length; i++) {
       try {
         const sig = ECSignature.parseCompact(this.signatures[i]);
-        const hash = this.hashMessage(msg);
 
         const pubKeyPair = ECPair.recoverFromSignature(hash, sig.signature.toCompact(sig.i, true), this.network);
 
@@ -99,7 +106,7 @@ class IdentitySignature {
 
     return results;
   }
-
+  
   fromBuffer(buffer, initialOffset, chainId, iAddress) {
     var bufferReader = new bufferutils.BufferReader(buffer, initialOffset || 0);
 
