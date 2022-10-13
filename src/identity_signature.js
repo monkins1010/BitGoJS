@@ -11,7 +11,7 @@ var BigInteger = require('bigi')
 const VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n"
 
 var bufferWriter = new bufferutils.BufferWriter(
-  Buffer.allocUnsafe(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1)
+  Buffer.alloc(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1)
 );
 
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
@@ -35,16 +35,19 @@ class IdentitySignature {
   }
 
   hashMessage(msg) {
-    const rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf8");
+    const rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf-8");
+
     var msgBufferWriter = new bufferutils.BufferWriter(
-      Buffer.allocUnsafe(varuint.encodingLength(msg.length) + msg.length)
+      Buffer.alloc(
+        varuint.encodingLength(rawMsgBuffer.length) + rawMsgBuffer.length
+      )
     );
 
     msgBufferWriter.writeVarSlice(rawMsgBuffer);
 
     const _msgHash = sha256(msgBufferWriter.buffer);
 
-    var heightBufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(4));
+    var heightBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(4));
     heightBufferWriter.writeUInt32(this.blockHeight);
 
     return createHash("sha256")
@@ -70,12 +73,25 @@ class IdentitySignature {
     var signature = keyPair.sign(buffer);
     if (Buffer.isBuffer(signature)) signature = ECSignature.fromRSBuffer(signature);
 
-    const recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0]
-    const compactSig = signature.toCompact(recid, true);
+    const signingAddress = keyPair.getAddress()
+    
+    let recid;
+    let compactSig;
 
-    this.signatures.push(compactSig)
+    // Try all possible recovery ids until one that can recover the 
+    // correct pubkey is found. This is not the most efficient way to do this.
+    for (recid = 0; recid < 4; recid++) {
+      compactSig = signature.toCompact(recid, true);
+      const recoveredKeyPair = ECPair.recoverFromSignature(buffer, compactSig, this.network);
 
-    return compactSig;
+      if (recoveredKeyPair.getAddress() === signingAddress) {
+        this.signatures.push(compactSig)
+
+        return compactSig
+      }
+    }
+
+    throw new Error("Failed to generate signature with valid recovery id")
   }
 
   // In this case keyPair refers to the ECPair containing at minimum
