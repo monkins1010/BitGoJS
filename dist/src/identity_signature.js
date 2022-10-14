@@ -8,7 +8,7 @@ var ECSignature = require('./ecsignature');
 var ECPair = require('./ecpair');
 var BigInteger = require('bigi');
 var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
-var bufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
+var bufferWriter = new bufferutils.BufferWriter(Buffer.alloc(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
 var VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
 var IdentitySignature = /** @class */ (function () {
@@ -30,11 +30,11 @@ var IdentitySignature = /** @class */ (function () {
         }
     }
     IdentitySignature.prototype.hashMessage = function (msg) {
-        var rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf8");
-        var msgBufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(varuint.encodingLength(msg.length) + msg.length));
+        var rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf-8");
+        var msgBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(varuint.encodingLength(rawMsgBuffer.length) + rawMsgBuffer.length));
         msgBufferWriter.writeVarSlice(rawMsgBuffer);
         var _msgHash = sha256(msgBufferWriter.buffer);
-        var heightBufferWriter = new bufferutils.BufferWriter(Buffer.allocUnsafe(4));
+        var heightBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(4));
         heightBufferWriter.writeUInt32(this.blockHeight);
         return createHash("sha256")
             .update(VERUS_DATA_SIGNATURE_PREFIX)
@@ -56,10 +56,20 @@ var IdentitySignature = /** @class */ (function () {
         var signature = keyPair.sign(buffer);
         if (Buffer.isBuffer(signature))
             signature = ECSignature.fromRSBuffer(signature);
-        var recid = keyPair.Q.affineY.and(BigInteger.fromHex("01")).toBuffer()[0];
-        var compactSig = signature.toCompact(recid, true);
-        this.signatures.push(compactSig);
-        return compactSig;
+        var signingAddress = keyPair.getAddress();
+        var recid;
+        var compactSig;
+        // Try all possible recovery ids until one that can recover the 
+        // correct pubkey is found. This is not the most efficient way to do this.
+        for (recid = 0; recid < 4; recid++) {
+            compactSig = signature.toCompact(recid, true);
+            var recoveredKeyPair = ECPair.recoverFromSignature(buffer, compactSig, this.network);
+            if (recoveredKeyPair.getAddress() === signingAddress) {
+                this.signatures.push(compactSig);
+                return compactSig;
+            }
+        }
+        throw new Error("Failed to generate signature with valid recovery id");
     };
     // In this case keyPair refers to the ECPair containing at minimum
     // a pubkey. This function returns an array of booleans indicating which
