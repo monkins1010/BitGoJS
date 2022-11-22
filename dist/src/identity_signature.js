@@ -6,7 +6,6 @@ var sha256 = require('./crypto').sha256;
 var createHash = require('create-hash');
 var ECSignature = require('./ecsignature');
 var ECPair = require('./ecpair');
-var BigInteger = require('bigi');
 var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
 var bufferWriter = new bufferutils.BufferWriter(Buffer.alloc(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
@@ -14,7 +13,7 @@ var VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
 var IdentitySignature = /** @class */ (function () {
     function IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress) {
         if (version === void 0) { version = 1; }
-        if (hashType === void 0) { hashType = 1; }
+        if (hashType === void 0) { hashType = 5; }
         if (blockHeight === void 0) { blockHeight = 0; }
         this.version = version;
         this.hashType = hashType;
@@ -102,6 +101,10 @@ var IdentitySignature = /** @class */ (function () {
     IdentitySignature.prototype.fromBuffer = function (buffer, initialOffset, chainId, iAddress) {
         var bufferReader = new bufferutils.BufferReader(buffer, initialOffset || 0);
         this.version = bufferReader.readUInt8();
+        if (this.version === 2)
+            this.hashType = bufferReader.readUInt8();
+        else if (this.version !== 1)
+            throw new Error("Unsupported version of identity signature");
         this.blockHeight = bufferReader.readUInt32();
         var numSigs = bufferReader.readUInt8();
         this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
