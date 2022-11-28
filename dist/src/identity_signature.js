@@ -10,10 +10,17 @@ var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
 var bufferWriter = new bufferutils.BufferWriter(Buffer.alloc(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
 bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
 var VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
+var HASH_INVALID = 0;
+var HASH_BLAKE2BMMR = 1;
+var HASH_BLAKE2BMMR2 = 2;
+var HASH_KECCAK = 3;
+var HASH_SHA256D = 4;
+var HASH_SHA256 = 5;
+var HASH_LASTTYPE = 5;
 var IdentitySignature = /** @class */ (function () {
     function IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress) {
-        if (version === void 0) { version = 1; }
-        if (hashType === void 0) { hashType = 5; }
+        if (version === void 0) { version = 2; }
+        if (hashType === void 0) { hashType = HASH_SHA256; }
         if (blockHeight === void 0) { blockHeight = 0; }
         this.version = version;
         this.hashType = hashType;
@@ -21,6 +28,7 @@ var IdentitySignature = /** @class */ (function () {
         this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
         this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
         this.network = network;
+        this.assertSupported();
         if (signatures != null) {
             this.signatures = signatures;
         }
@@ -28,6 +36,12 @@ var IdentitySignature = /** @class */ (function () {
             this.signatures = [];
         }
     }
+    IdentitySignature.prototype.assertSupported = function () {
+        if (this.version !== 1 && this.version !== 2)
+            throw new Error("Unsupported version");
+        if (this.version === 2 && this.hashType !== HASH_SHA256)
+            throw new Error("Unsupported hashtype");
+    };
     IdentitySignature.prototype.hashMessage = function (msg) {
         var rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf-8");
         var msgBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(varuint.encodingLength(rawMsgBuffer.length) + rawMsgBuffer.length));
@@ -50,8 +64,7 @@ var IdentitySignature = /** @class */ (function () {
         return this.verifyHashOffline(this.hashMessage(msg), signingAddress);
     };
     IdentitySignature.prototype.signHashOffline = function (buffer, keyPair) {
-        if (this.version !== 1)
-            throw new Error("Versions above 1 not supported");
+        this.assertSupported();
         var signature = keyPair.sign(buffer);
         if (Buffer.isBuffer(signature))
             signature = ECSignature.fromRSBuffer(signature);
@@ -74,8 +87,7 @@ var IdentitySignature = /** @class */ (function () {
     // a pubkey. This function returns an array of booleans indicating which
     // signatures passed and failed
     IdentitySignature.prototype.verifyHashOffline = function (hash, signingAddress) {
-        if (this.version !== 1)
-            throw new Error("Versions above 1 not supported");
+        this.assertSupported();
         if (this.signatures.length == 0)
             throw new Error("No signatures to verify");
         var results = [];
@@ -103,8 +115,7 @@ var IdentitySignature = /** @class */ (function () {
         this.version = bufferReader.readUInt8();
         if (this.version === 2)
             this.hashType = bufferReader.readUInt8();
-        else if (this.version !== 1)
-            throw new Error("Unsupported version of identity signature");
+        this.assertSupported();
         this.blockHeight = bufferReader.readUInt32();
         var numSigs = bufferReader.readUInt8();
         this.chainId = chainId == null ? null : fromBase58Check(chainId).hash;
@@ -119,15 +130,19 @@ var IdentitySignature = /** @class */ (function () {
         this.signatures.forEach(function (sig) {
             totalSigLength += sig.length;
         });
-        return 6 + varuint.encodingLength(this.signatures.length) + totalSigLength;
+        return ((this.version === 2 ? 7 : 6) +
+            varuint.encodingLength(this.signatures.length) +
+            totalSigLength);
     };
     IdentitySignature.prototype.toBuffer = function (buffer, initialOffset) {
+        this.assertSupported();
         var noBuffer = !buffer;
         if (noBuffer)
             buffer = Buffer.allocUnsafe(this.__byteLength());
         var bufferWriter = new bufferutils.BufferWriter(buffer, initialOffset || 0);
-        //bufferWriter.writeUInt8(this.version);
         bufferWriter.writeUInt8(this.version);
+        if (this.version === 2)
+            bufferWriter.writeUInt8(this.hashType);
         bufferWriter.writeUInt32(this.blockHeight);
         bufferWriter.writeUInt8(this.signatures.length); // num signatures
         for (var _i = 0, _a = this.signatures; _i < _a.length; _i++) {

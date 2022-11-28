@@ -17,8 +17,16 @@ bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
 
 const VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
 
+const HASH_INVALID = 0
+const HASH_BLAKE2BMMR = 1
+const HASH_BLAKE2BMMR2 = 2
+const HASH_KECCAK = 3
+const HASH_SHA256D = 4
+const HASH_SHA256 = 5
+const HASH_LASTTYPE = 5
+
 class IdentitySignature {
-  constructor(network, version = 1, hashType = 5, blockHeight = 0, signatures, chainId, iAddress) {
+  constructor(network, version = 2, hashType = HASH_SHA256, blockHeight = 0, signatures, chainId, iAddress) {
     this.version = version;
     this.hashType = hashType;
     this.blockHeight = blockHeight;
@@ -26,11 +34,18 @@ class IdentitySignature {
     this.identity = iAddress == null ? null : fromBase58Check(iAddress).hash;
     this.network = network;
 
+    this.assertSupported()
+
     if (signatures != null) {
       this.signatures = signatures;
     } else {
       this.signatures = [];
     }
+  }
+
+  assertSupported() {
+    if (this.version !== 1 && this.version !== 2) throw new Error("Unsupported version");
+    if (this.version === 2 && this.hashType !== HASH_SHA256) throw new Error("Unsupported hashtype")
   }
 
   hashMessage(msg) {
@@ -67,7 +82,7 @@ class IdentitySignature {
   }
 
   signHashOffline(buffer, keyPair) {
-    if (this.version !== 1) throw new Error("Versions above 1 not supported");
+    this.assertSupported()
 
     var signature = keyPair.sign(buffer);
     if (Buffer.isBuffer(signature)) signature = ECSignature.fromRSBuffer(signature);
@@ -97,7 +112,8 @@ class IdentitySignature {
   // a pubkey. This function returns an array of booleans indicating which
   // signatures passed and failed
   verifyHashOffline(hash, signingAddress) {
-    if (this.version !== 1) throw new Error("Versions above 1 not supported");
+    this.assertSupported()
+
     if (this.signatures.length == 0) throw new Error("No signatures to verify");
     const results = [];
 
@@ -128,7 +144,8 @@ class IdentitySignature {
     this.version = bufferReader.readUInt8();
 
     if (this.version === 2) this.hashType = bufferReader.readUInt8();
-    else if (this.version !== 1) throw new Error("Unsupported version of identity signature")
+    
+    this.assertSupported()
 
     this.blockHeight = bufferReader.readUInt32();
     const numSigs = bufferReader.readUInt8();
@@ -150,16 +167,24 @@ class IdentitySignature {
       totalSigLength += sig.length;
     });
 
-    return 6 + varuint.encodingLength(this.signatures.length) + totalSigLength;
+    return (
+      (this.version === 2 ? 7 : 6) +
+      varuint.encodingLength(this.signatures.length) +
+      totalSigLength
+    );
   }
 
   toBuffer(buffer, initialOffset) {
+    this.assertSupported()
+
     var noBuffer = !buffer;
     if (noBuffer) buffer = Buffer.allocUnsafe(this.__byteLength());
     var bufferWriter = new bufferutils.BufferWriter(buffer, initialOffset || 0);
 
-    //bufferWriter.writeUInt8(this.version);
     bufferWriter.writeUInt8(this.version);
+
+    if (this.version === 2) bufferWriter.writeUInt8(this.hashType);
+
     bufferWriter.writeUInt32(this.blockHeight);
     bufferWriter.writeUInt8(this.signatures.length); // num signatures
 
