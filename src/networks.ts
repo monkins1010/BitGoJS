@@ -303,7 +303,8 @@ const networks: Record<NetworkName, Network> &
       // 4: 0x2bb40e60
       // 4: 0xf5b9230b (Heartwood branch id, see https://zips.z.cash/zip-0250)
       // 4: 0xe9ff75a6, // (Canopy branch id, see https://zips.z.cash/zip-0251)
-      4: 0x37519621 // NU5 Branch ID (backwards compatible with NU4)
+      // 4: 0x37519621 // NU5 Branch ID (backwards compatible with NU4)
+      4: 0xc2d6d0b4
     },
     coin: coins.ZEC,
     isZcashCompatible: true
