@@ -53,7 +53,7 @@ export function createTransactionBuilderForNetwork(network: Network): Transactio
       txb.setVersion(4);
       txb.setVersionGroupId(0x892f2085);
       // Use "Canopy" consensus branch ID https://zips.z.cash/zip-0251
-      txb.setConsensusBranchId(0xe9ff75a6);
+      txb.setConsensusBranchId(0xc2d6d0b4);
       return txb;
     }
   }
