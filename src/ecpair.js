@@ -77,7 +77,7 @@ ECPair.fromPublicKeyBuffer = function (buffer, network) {
     network: network
   })
 }
-ECPair.fromWIF = function (string, network) {
+ECPair.fromWIF = function (string, network, skipVersionCheck = false) {
   var decoded = wif.decode(string)
   var version = decoded.version
 
@@ -93,7 +93,7 @@ ECPair.fromWIF = function (string, network) {
   } else {
     network = network || NETWORKS.bitcoin
 
-    if (version !== network.wif) throw new Error('Invalid network version')
+    if (!skipVersionCheck && version !== network.wif) throw new Error('Invalid network version')
   }
 
   var d = BigInteger.fromBuffer(decoded.privateKey)
