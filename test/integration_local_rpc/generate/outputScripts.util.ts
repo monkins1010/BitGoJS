@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 import { Network } from '../../../src/networkTypes';
 import { Transaction, Triple } from './types';
 import { createOutputScript2of3, ScriptType2Of3, scriptTypes2Of3 } from '../../../src/bitgo/outputScripts';
-import { getMainnet, isBitcoin, isBitcoinGold, isLitecoin } from '../../../src/coins';
+import { getMainnet, isBitcoin, isBitcoinGold, isLitecoin, isVerus, isZcashCompatible } from '../../../src/coins';
 import { getDefaultSigHash } from '../../../src/bitgo/signature';
 
 const utxolib = require('../../../src');
@@ -23,20 +23,21 @@ export function requiresSegwit(scriptType: ScriptType): boolean {
 
 export type KeyTriple = Triple<bip32.BIP32Interface>;
 
-function getKey(seed: string): bip32.BIP32Interface {
-  return bip32.fromSeed(crypto.createHash('sha256').update(seed).digest());
+function getKey(seed: string, network?: Network): bip32.BIP32Interface {
+  return bip32.fromSeed(crypto.createHash('sha256').update(seed).digest(), network);
 }
 
-export function getKeyTriple(seed: string): KeyTriple {
-  return [getKey(seed + '.0'), getKey(seed + '.1'), getKey(seed + '.2')];
+export function getKeyTriple(seed: string, network?: Network): KeyTriple {
+  return [getKey(seed + '.0', network), getKey(seed + '.1', network), getKey(seed + '.2', network)];
 }
 
 export function supportsSegwit(network: Network): boolean {
   return isBitcoin(network) || isLitecoin(network) || isBitcoinGold(network);
 }
 
+// Skip p2sh on VRSC until lib can successfully generate p2sh multisig txs
 export function isSupportedDepositType(network: Network, scriptType: ScriptType): boolean {
-  return !requiresSegwit(scriptType) || supportsSegwit(network);
+  return (!requiresSegwit(scriptType) || supportsSegwit(network)) && (!isVerus(network) || scriptType !== 'p2sh')
 }
 
 export function isSupportedSpendType(network: Network, scriptType: ScriptType): boolean {
@@ -81,6 +82,9 @@ export function createScriptPubKey(keys: KeyTriple, scriptType: ScriptType, netw
 export function getTransactionBuilder(network: Network) {
   const txb = new utxolib.TransactionBuilder(network);
   switch (getMainnet(network)) {
+    case utxolib.networks.verus:
+      txb.setVersion(4);
+      txb.setVersionGroupId(0x892f2085);
     case utxolib.networks.zcash:
       txb.setVersion(4);
       txb.setVersionGroupId(0x892f2085);
@@ -100,6 +104,7 @@ export function createSpendTransactionFromPrevOutputs(
   scriptType: ScriptType2Of3,
   prevOutputs: [txid: string, index: number, value: number][],
   recipientScript: Buffer,
+  height: number,
   network: Network,
   { signKeys = keys.slice(0, 2) } = {}
 ): Transaction {
@@ -117,6 +122,15 @@ export function createSpendTransactionFromPrevOutputs(
   const fee = 1000;
 
   txBuilder.addOutput(recipientScript, inputSum - fee);
+  
+  if (isZcashCompatible(network)) {
+    txBuilder.setExpiryHeight(
+      height === 0 ? 0 : height + 100
+    );
+    txBuilder.setLockTime(
+      height === 0 ? 0 : height - 10
+    );
+  }
 
   const { redeemScript, witnessScript } = createOutputScript2of3(
     keys.map((k) => k.publicKey),
@@ -148,6 +162,7 @@ export function createSpendTransaction(
   inputTxid: string,
   inputTxBuffer: Buffer,
   recipientScript: Buffer,
+  height: number,
   network: Network
 ): Transaction {
   const inputTx = utxolib.Transaction.fromBuffer(inputTxBuffer, network);
@@ -169,6 +184,7 @@ export function createSpendTransaction(
     scriptType,
     matches.map(([output, index]) => [inputTxid, index, output.value]),
     recipientScript,
+    height,
     network
   );
 }

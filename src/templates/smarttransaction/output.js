@@ -7,8 +7,7 @@ var OPS = require('bitcoin-ops')
 const OptCCParams = require('../../optccparams')
 var OP_INT_BASE = OPS.OP_RESERVED // OP_1 - 1
 
-function check (script)
-{
+function check (script) {
   var chunks = bscript.decompile(script)
 
   // chunks for a smart transaction should include a push of either a CC or empty/master COptCCParams, then an OP_CHECKCRYPTOCONDITION,
@@ -19,14 +18,13 @@ function check (script)
     chunks.length < 4 ||
     !(chunks[chunks.length - 1] === OPS.OP_DROP && chunks[1] === OPS.OP_CHECKCRYPTOCONDITION)
   ) {
-    return false;
+    return false
   }
 
   const params = OptCCParams.fromChunk(chunks[2])
   const master = OptCCParams.fromChunk(chunks[0])
 
-  if (!params.isValid() || !master.isValid())
-  {
+  if (!params.isValid() || !master.isValid()) {
     return false
   }
 

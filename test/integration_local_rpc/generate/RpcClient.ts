@@ -21,8 +21,13 @@ function sleep(millis: number): Promise<void> {
 
 export class RpcClient {
   id = 0;
+  user = null;
+  pass = null;
 
-  constructor(private network: Network, private url) {}
+  constructor(private network: Network, private url, user?: string, pass?: string) {
+    this.user = user;
+    this.pass = pass;
+  }
 
   async exec<T>(method: string, ...params: unknown[]): Promise<T> {
     try {
@@ -32,12 +37,18 @@ export class RpcClient {
         method,
         params,
         id: `${this.id++}`,
-      });
+      }, this.user != null && this.pass != null ? {
+        auth: {
+          username: this.user,
+          password: this.pass,
+        },
+      } : undefined);
       debug('>', response.data.result);
       return response.data.result;
     } catch (e) {
       if (e.isAxiosError && e.response) {
         e = e as AxiosError;
+
         const { error } = e.response.data;
         const { code, message } = error;
         throw new Error(`RPC error: ${message} (code=${code})`);
@@ -83,6 +94,16 @@ export class RpcClient {
     return Buffer.from(await this.exec<string>('getrawtransaction', txid), 'hex');
   }
 
+  async waitTillHeight(height: number, timeoutSecs: number = 600): Promise<void> {
+    for (let i = 0; i < timeoutSecs; i++) {
+      const count = await this.getBlockCount()
+
+      if (count >= height) return;
+      else await sleep(1_000);
+    }
+    throw new Error(`timed out while waiting for height`);
+  }
+
   async getRawTransactionVerbose(txid: string): Promise<RpcTransaction> {
     const verbose = isZcashCompatible(this.network) ? 1 : true;
     return await this.exec('getrawtransaction', txid, verbose);
@@ -94,14 +115,16 @@ export class RpcClient {
 
   static async fromEnvvar(network: Network): Promise<RpcClient> {
     const networkName = getNetworkName(network);
-    assert(networkName);
+    assert(networkName);    
     const envKey = 'RPC_' + networkName.toUpperCase();
+    const userKey = 'RPC_USER_' + networkName.toUpperCase();
+    const passKey = 'RPC_PASS_' + networkName.toUpperCase();
     const url = process.env[envKey];
     if (url === undefined) {
       throw new Error(`envvar ${envKey} not set`);
     }
 
-    return this.forUrl(network, url);
+    return this.forUrl(network, url, process.env[userKey], process.env[passKey]);
   }
 
   static getSupportedNodeVersions(network: Network): string[] {
@@ -120,14 +143,16 @@ export class RpcClient {
         return ['/LitecoinCore:0.17.1/'];
       case utxolib.networks.zcash:
         return ['/MagicBean:4.4.0/'];
+      case utxolib.networks.verus:
+        return ['/MagicBean:2.0.7-3/'];
       default:
         return [];
     }
   }
 
-  static async forUrl(network: Network, url: string) {
+  static async forUrl(network: Network, url: string, user?: string, pass?: string) {
     const networkName = getNetworkName(network);
-    const rpcClient = new RpcClient(network, url);
+    const rpcClient = new RpcClient(network, url, user, pass);
     const networkinfo = await rpcClient.getNetworkInfo();
 
     const versions = this.getSupportedNodeVersions(network);

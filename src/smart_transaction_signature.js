@@ -2,8 +2,7 @@ var Buffer = require('safe-buffer').Buffer
 var varuint = require('varuint-bitcoin')
 
 class SmartTransactionSignature {
-  constructor(version = 1, sigType = 1, pubKeyData, oneSignature)
-  {
+  constructor (version = 1, sigType = 1, pubKeyData, oneSignature) {
     this.sigType = sigType
     this.pubKeyData = pubKeyData
 
@@ -14,26 +13,25 @@ class SmartTransactionSignature {
     }
   }
 
-  fromBuffer(buffer, initialOffset)
-  {
+  fromBuffer (buffer, initialOffset) {
     var offset = initialOffset || 0
     function readSlice (n) {
       offset += n
       return buffer.slice(offset - n, offset)
     }
-  
+
     function readUInt8 () {
       var i = buffer.readUInt8(offset)
       offset += 1
       return i
     }
-  
+
     function readVarInt () {
       var vi = varuint.decode(buffer, offset)
       offset += varuint.decode.bytes
       return vi
     }
-  
+
     function readVarSlice () {
       return readSlice(readVarInt())
     }
@@ -44,16 +42,14 @@ class SmartTransactionSignature {
     return offset
   }
 
-  __byteLength()
-  {
-    return 1 + 
-           varuint.encodingLength(this.pubKeyData.length) + this.pubKeyData.length + 
+  __byteLength () {
+    return 1 +
+           varuint.encodingLength(this.pubKeyData.length) + this.pubKeyData.length +
            varuint.encodingLength(this.oneSignature.length) + this.oneSignature.length
   }
 
-  toBuffer(buffer, initialOffset)
-  {
-    var noBuffer = !buffer;
+  toBuffer (buffer, initialOffset) {
+    var noBuffer = !buffer
     if (noBuffer) buffer = Buffer.allocUnsafe(this.__byteLength())
     var offset = initialOffset || 0
     function writeSlice (slice) { offset += slice.copy(buffer, offset) }

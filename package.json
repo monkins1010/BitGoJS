@@ -28,6 +28,17 @@
     "test": "npm run standard && npm run coverage",
     "unit-test": "mocha"
   },
+  "nyc": {
+    "exclude": [
+      "dist/**",
+      "test/**"
+    ]
+  },
+  "standard": {
+    "ignore": [
+      "dist/**"
+    ]
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/miketout/BitGoJS.git#utxo-lib-verus"

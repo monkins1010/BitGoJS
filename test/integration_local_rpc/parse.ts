@@ -45,8 +45,14 @@ function runTestParse(network: Network, txType: FixtureTxType, scriptType: Scrip
     let parsedTx: Transaction;
 
     before(async function () {
-      fixture = await readFixture(network, fixtureName);
-      parsedTx = utxolib.Transaction.fromBuffer(Buffer.from(fixture.transaction.hex, 'hex'), network);
+      try {
+        fixture = await readFixture(network, fixtureName);
+        parsedTx = utxolib.Transaction.fromBuffer(Buffer.from(fixture.transaction.hex, 'hex'), network);
+      } catch(e) {
+        if (e.code === "ENOENT") {
+          throw new Error("Failed to find fixture file '" + fixtureName + "', for " + "" + " cannot run test.")
+        } else throw e
+      }
     });
 
     it(`round-trip`, function () {
@@ -137,6 +143,7 @@ function runTestParse(network: Network, txType: FixtureTxType, scriptType: Scrip
         scriptType,
         parsedTx.ins.map((i) => [getTxidFromHash(i.hash), i.index, getPrevOutputValue(i)]),
         recipientScript,
+        0,
         network,
         { signKeys }
       ) as unknown as Transaction;

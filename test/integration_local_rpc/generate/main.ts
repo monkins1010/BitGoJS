@@ -22,6 +22,8 @@ import { RpcClient } from './RpcClient';
 import { fixtureKeys, wipeFixtures, writeTransactionFixtureWithInputs } from './fixtures';
 import { isScriptType2Of3 } from '../../../src/bitgo/outputScripts';
 
+const wif = require("wif")
+
 async function initBlockchain(rpc: RpcClient, network: Network): Promise<void> {
   let minBlocks = 300;
   switch (network) {
@@ -65,8 +67,10 @@ function toRegtestAddress(network: { bech32?: string }, scriptType: ScriptType, 
 async function createTransactionsForScriptType(
   rpc: RpcClient,
   scriptType: ScriptType,
+  height: number,
   network: Network
 ): Promise<void> {
+  const fixtureKeys = getKeyTriple('rpctest', network)
   const logTag = `createTransaction ${scriptType} ${getNetworkName(network)}`;
   if (!isSupportedDepositType(network, scriptType)) {
     console.log(logTag + ': not supported, skipping');
@@ -84,15 +88,17 @@ async function createTransactionsForScriptType(
     return;
   }
 
-  const spendTx = createSpendTransaction(fixtureKeys, scriptType, depositTxid, depositTx, script, network);
+  await rpc.waitTillHeight(height + 1)
+  
+  const spendTx = createSpendTransaction(fixtureKeys, scriptType, depositTxid, depositTx, script, height, network);
   const spendTxid = await rpc.sendRawTransaction(spendTx.toBuffer());
   assert.strictEqual(spendTxid, spendTx.getId());
   await writeTransactionFixtureWithInputs(rpc, network, `spend_${scriptType}.json`, spendTxid);
 }
 
-async function createTransactions(rpc: RpcClient, network: Network) {
+async function createTransactions(rpc: RpcClient, height: number, network: Network) {
   for (const scriptType of scriptTypes) {
-    await createTransactionsForScriptType(rpc, scriptType, network);
+    await createTransactionsForScriptType(rpc, scriptType, height, network);
   }
 }
 
@@ -110,7 +116,7 @@ async function run(network: Network) {
 
   try {
     await initBlockchain(rpc, network);
-    await createTransactions(rpc, network);
+    await createTransactions(rpc, (await rpc.getBlockCount()), network);
   } catch (e) {
     console.error(`error for network ${getNetworkName(network)}`);
     throw e;

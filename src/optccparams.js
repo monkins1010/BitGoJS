@@ -3,16 +3,13 @@ var EVALS = require('bitcoin-ops/evals.json')
 var varuint = require('varuint-bitcoin')
 const TxDestination = require('./tx_destination')
 
-function varSliceSize(varSlice)
-{
+function varSliceSize (varSlice) {
   var length = varSlice.length
   return varuint.encodingLength(length) + length
 }
 
-class OptCCParams
-{
-  constructor(version=3, evalCode=0, m=1, n=1, destinations=[], serializedObjects=[])
-  {
+class OptCCParams {
+  constructor (version = 3, evalCode = 0, m = 1, n = 1, destinations = [], serializedObjects = []) {
     this.version = version
     this.evalCode = evalCode
     this.m = m
@@ -24,15 +21,13 @@ class OptCCParams
     this.error = null
   }
 
-  getParamObject()
-  {
-    switch (this.evalCode)
-    {
+  getParamObject () {
+    switch (this.evalCode) {
       case EVALS.EVAL_NONE:
         {
           return null
         }
-  
+
       case EVALS.EVAL_STAKEGUARD:
       case EVALS.EVAL_CURRENCY_DEFINITION:
       case EVALS.EVAL_NOTARY_EVIDENCE:
@@ -52,28 +47,23 @@ class OptCCParams
       case EVALS.EVAL_FEE_POOL:
       case EVALS.EVAL_NOTARY_SIGNATURE:
         {
-          if (this.vData.length)
-          {
+          if (this.vData.length) {
             return this.vData[0]
-          }
-          else
-          {
+          } else {
             return null
           }
         }
-  
+
       default:
         {
           return null
         }
     }
   }
-  
-  isValid()
-  {
-    var validEval = false;
-    switch (this.evalCode)
-    {
+
+  isValid () {
+    var validEval = false
+    switch (this.evalCode) {
       case EVALS.EVAL_NONE:
         {
           validEval = true
@@ -107,13 +97,12 @@ class OptCCParams
       this.version > 0 &&
       this.version < 4 &&
       ((this.version < 3 && this.evalCode < 2) || (this.evalCode <= 26 && this.m <= this.n))
-    );
+    )
   }
 
-  static fromChunk(chunk)
-  {
+  static fromChunk (chunk) {
     var prefix = Buffer.alloc(1)
-    prefix.writeUInt8(chunk.length, 0);
+    prefix.writeUInt8(chunk.length, 0)
 
     const params = new OptCCParams()
 
@@ -122,38 +111,35 @@ class OptCCParams
     return params
   }
 
-  toChunk()
-  {
+  toChunk () {
     return this.toBuffer().slice(1)
   }
 
-  fromBuffer(buffer, initialOffset = 0)
-  {
+  fromBuffer (buffer, initialOffset = 0) {
     // the first element in this buffer will be a script to decompile and get pushed data from
     var offset = initialOffset
     function readSlice (n) {
       offset += n
       return buffer.slice(offset - n, offset)
     }
-  
+
     function readVarInt () {
       var vi = varuint.decode(buffer, offset)
       offset += varuint.decode.bytes
       return vi
     }
-  
+
     function readVarSlice () {
       return readSlice(readVarInt())
     }
-  
+
     const scriptInVector = readVarSlice()
     const chunks = bscript.decompile(scriptInVector)
 
-    if (chunks[0].length != 4)
-    {
+    if (chunks[0].length !== 4) {
       // invalid optional parameters header
       this.version = 0
-      this.error = new Error("invalid optional parameters header")
+      this.error = new Error('invalid optional parameters header')
       return initialOffset
     }
 
@@ -163,51 +149,44 @@ class OptCCParams
     this.n = chunks[0].readUInt8(3)
 
     // now, we should have n keys followed by data objects for later versions, otherwise all keys and one data object
-    if (this.version <= 0 || 
-        this.version > 3 || 
-        this.evalCode < 0 || 
+    if (this.version <= 0 ||
+        this.version > 3 ||
+        this.evalCode < 0 ||
         this.evalCode > 0x1a || // this is the last valid eval code as of version 3
         (this.version < 3 && this.n < 1) ||
         this.n > 4 ||
         (this.version < 3 && this.n >= chunks.length) ||
-        this.n > chunks.length)
-    {
+        this.n > chunks.length) {
       // invalid header values
       this.version = 0
-      this.error = new Error("invalid header values")
+      this.error = new Error('invalid header values')
       return initialOffset
     }
 
     // now, we have chunks left that are either destinations or data vectors
-    const limit = this.n == chunks.length ? this.n : this.n + 1;
+    const limit = this.n === chunks.length ? this.n : this.n + 1
     this.destinations = []
     let loop
-    for (loop = 1; this.version && loop < limit; loop++)
-    {
+    for (loop = 1; this.version && loop < limit; loop++) {
       const oneDest = TxDestination.fromChunk(chunks[loop])
 
-      if (oneDest.isValid())
-      {
+      if (oneDest.isValid()) {
         this.destinations.push(oneDest)
-      }
-      else
-      {
+      } else {
         this.version = 0
-        this.error = new Error("invalid destination")
+        this.error = new Error('invalid destination')
         return initialOffset
       }
     }
 
-    for ( ; this.version && loop < chunks.length; loop++)
-    {
+    for (; this.version && loop < chunks.length; loop++) {
       this.vData.push(chunks[loop]) // is this an issue to just store as is for the data?
     }
 
     return offset
   }
 
-  __byteLength()
-  {
+  __byteLength () {
     const chunks = [Buffer.allocUnsafe(4)]
     chunks[0][0] = this.version
     chunks[0][1] = this.evalCode
@@ -216,15 +195,14 @@ class OptCCParams
     this.destinations.forEach(x => {
       chunks.push(Buffer.allocUnsafe(x.__byteLength()))
       x.toBuffer(chunks[chunks.length - 1])
-    });
+    })
     this.vData.forEach(x => {
       chunks.push(x)
-    });
+    })
     return varSliceSize(bscript.compile(chunks))
   }
 
-  toBuffer(buffer, initialOffset)
-  {
+  toBuffer (buffer, initialOffset) {
     var offset = initialOffset || 0
     function writeSlice (slice) { offset += slice.copy(buffer, offset) }
     function writeVarInt (i) {
@@ -240,10 +218,10 @@ class OptCCParams
     chunks[0][3] = this.n
     this.destinations.forEach(x => {
       chunks.push(x.toChunk())
-    });
+    })
     this.vData.forEach(x => {
       chunks.push(x)
-    });
+    })
 
     const scriptStore = bscript.compile(chunks)
     if (!buffer) buffer = Buffer.allocUnsafe(varSliceSize(scriptStore))
@@ -252,7 +230,7 @@ class OptCCParams
     // avoid slicing unless necessary
     if (initialOffset !== undefined) return buffer.slice(initialOffset, offset)
     // TODO (https://github.com/BitGo/bitgo-utxo-lib/issues/11): we shouldn't have to slice the final buffer
-    return buffer.slice(0, offset)    
+    return buffer.slice(0, offset)
   }
 }
 

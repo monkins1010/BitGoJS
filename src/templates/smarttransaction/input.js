@@ -1,10 +1,7 @@
 // OP_0 [signatures ...]
 
-var Buffer = require('safe-buffer').Buffer
 var bscript = require('../../script')
-var p2sto = require('./output')
 var typeforce = require('typeforce')
-var varuint = require('varuint-bitcoin')
 var OPS = require('bitcoin-ops')
 const SmartTransactionSignatures = require('../../smart_transaction_signatures')
 
@@ -14,13 +11,13 @@ function partialSignature (value) {
 
 function check (script) {
   var chunks = bscript.decompile(script)
-  if (chunks.length != 1) return false
+  if (chunks.length !== 1) return false
 
-  return SmartTransactionSignatures.fromChunk(chunks[0]).isValid();
+  return SmartTransactionSignatures.fromChunk(chunks[0]).isValid()
 }
 check.toJSON = function () { return 'smart transaction input' }
 
-function encodeStack (signature) {  
+function encodeStack (signature) {
   const smartTxSigs = SmartTransactionSignatures.fromChunk(signature)
 
   if (smartTxSigs.error == null) return [signature]
@@ -46,5 +43,6 @@ module.exports = {
   decode: decode,
   decodeStack: decodeStack,
   encode: encode,
-  encodeStack: encodeStack
+  encodeStack: encodeStack,
+  partialSignature: partialSignature
 }

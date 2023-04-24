@@ -9,9 +9,9 @@ var wif = require('wif')
 var NETWORKS = require('./networks')
 var BigInteger = require('bigi')
 
-var EC = require('elliptic').ec;
-const BN = require("bn.js");
-const sig = require("./ecsignature")
+var EC = require('elliptic').ec
+const BN = require('bn.js')
+const sig = require('./ecsignature')
 
 var ecurve = require('ecurve')
 var curve = ecurve.getCurveByName('secp256k1')
@@ -58,8 +58,8 @@ Object.defineProperty(ECPair.prototype, 'Q', {
 
 ECPair.recoverFromSignature = function (hashBuffer, compactSigBuffer, network) {
   const compactParsed = sig.parseCompact(compactSigBuffer)
-  const ecSecp256k1 = new EC('secp256k1');
-  
+  const ecSecp256k1 = new EC('secp256k1')
+
   const pub = ecSecp256k1.recoverPubKey(new BN(hashBuffer, 16).toString(10), {
     r: compactParsed.signature.r.toBuffer(),
     s: compactParsed.signature.s.toBuffer(),
