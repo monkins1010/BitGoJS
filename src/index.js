@@ -21,6 +21,7 @@ module.exports = {
   OptCCParams: require('./optccparams'),
   IdentitySignature: require('./identity_signature'),
 
+  txvalidation: require('./transaction_validation'),
   address: require('./address'),
   coins: require('./coins'),
   crypto: require('./crypto'),

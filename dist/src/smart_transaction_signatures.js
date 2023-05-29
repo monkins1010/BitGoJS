@@ -8,7 +8,7 @@ var SmartTransactionSignatures = /** @class */ (function () {
         if (sigHashType === void 0) { sigHashType = 1; }
         this.version = version;
         this.sigHashType = sigHashType;
-        this.signatures = signatures ? signatures : [];
+        this.signatures = signatures || [];
         this.error = null;
     }
     SmartTransactionSignatures.prototype.isValid = function () {
@@ -52,7 +52,6 @@ var SmartTransactionSignatures = /** @class */ (function () {
         return this.toBuffer();
     };
     SmartTransactionSignatures.prototype.fromBuffer = function (buffer, initialOffset) {
-        var _a;
         if (initialOffset === void 0) { initialOffset = 0; }
         var offset = initialOffset;
         function readUInt8() {
@@ -72,7 +71,7 @@ var SmartTransactionSignatures = /** @class */ (function () {
         }
         try {
             if (buffer.length < this.minLength()) {
-                this.error = new Error("buffer length too short");
+                this.error = new Error('buffer length too short');
                 return initialOffset;
             }
             this.version = readUInt8();
@@ -80,7 +79,7 @@ var SmartTransactionSignatures = /** @class */ (function () {
             if (!(this.version > 0 && this.version < 2 && bscript.isDefinedHashType(this.sigHashType))) {
                 return initialOffset;
             }
-            this.signatures = (_a = this.signatures) !== null && _a !== void 0 ? _a : [];
+            this.signatures = this.signatures ? this.signatures : [];
             for (var numSignatures = readVarInt(); numSignatures > 0; numSignatures--) {
                 this.signatures[this.signatures.length] = readOneSig();
             }

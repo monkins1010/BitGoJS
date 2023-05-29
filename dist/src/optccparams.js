@@ -124,10 +124,10 @@ var OptCCParams = /** @class */ (function () {
         }
         var scriptInVector = readVarSlice();
         var chunks = bscript.decompile(scriptInVector);
-        if (chunks[0].length != 4) {
+        if (chunks[0].length !== 4) {
             // invalid optional parameters header
             this.version = 0;
-            this.error = new Error("invalid optional parameters header");
+            this.error = new Error('invalid optional parameters header');
             return initialOffset;
         }
         this.version = chunks[0].readUInt8(0);
@@ -145,11 +145,11 @@ var OptCCParams = /** @class */ (function () {
             this.n > chunks.length) {
             // invalid header values
             this.version = 0;
-            this.error = new Error("invalid header values");
+            this.error = new Error('invalid header values');
             return initialOffset;
         }
         // now, we have chunks left that are either destinations or data vectors
-        var limit = this.n == chunks.length ? this.n : this.n + 1;
+        var limit = this.n === chunks.length ? this.n : this.n + 1;
         this.destinations = [];
         var loop;
         for (loop = 1; this.version && loop < limit; loop++) {
@@ -159,7 +159,7 @@ var OptCCParams = /** @class */ (function () {
             }
             else {
                 this.version = 0;
-                this.error = new Error("invalid destination");
+                this.error = new Error('invalid destination');
                 return initialOffset;
             }
         }

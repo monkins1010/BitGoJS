@@ -130,11 +130,11 @@ var TxDestination = /** @class */ (function () {
             return readSlice(readVarInt());
         }
         var destByteVector = readVarSlice();
-        if (destByteVector.length == 20) {
+        if (destByteVector.length === 20) {
             this.destType = this.typePKH;
             this.destinationBytes = destByteVector;
         }
-        else if (destByteVector.length == 33) {
+        else if (destByteVector.length === 33) {
             this.destType = this.typePK;
             this.destinationBytes = destByteVector;
         }
@@ -145,10 +145,10 @@ var TxDestination = /** @class */ (function () {
         return offset;
     };
     TxDestination.prototype.__byteLength = function () {
-        if (this.destType == this.typePKH) {
+        if (this.destType === this.typePKH) {
             return 21;
         }
-        else if (this.destType == this.typePK) {
+        else if (this.destType === this.typePK) {
             return 34;
         }
         else {
@@ -168,14 +168,14 @@ var TxDestination = /** @class */ (function () {
             offset += varuint.encode.bytes;
         }
         function writeVarSlice(slice) { writeVarInt(slice.length); writeSlice(slice); }
-        if (this.destType == this.typePKH) {
-            if (this.destinationBytes.length != 20) {
+        if (this.destType === this.typePKH) {
+            if (this.destinationBytes.length !== 20) {
                 throw new TypeError('invalid length for typePKH destination bytes');
             }
             writeVarSlice(this.destinationBytes);
         }
-        else if (this.destType == this.typePK) {
-            if (this.destinationBytes.length != 33) {
+        else if (this.destType === this.typePK) {
+            if (this.destinationBytes.length !== 33) {
                 throw new TypeError('invalid length for typePK destination bytes');
             }
             writeVarSlice(this.destinationBytes);

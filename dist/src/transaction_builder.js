@@ -13,16 +13,15 @@ var SIGNABLE = [
     btemplates.types.P2PKH,
     btemplates.types.P2PK,
     btemplates.types.MULTISIG,
-    btemplates.types.SMART_TRANSACTION,
+    btemplates.types.SMART_TRANSACTION
 ];
 var P2SH = SIGNABLE.concat([btemplates.types.P2WPKH, btemplates.types.P2WSH]);
 var ECPair = require('./ecpair');
 var ECSignature = require('./ecsignature');
 var Transaction = require('./transaction');
-var OptCCParams = require('./optccparams');
 var SmartTransactionSignatures = require('./smart_transaction_signatures');
 var SmartTransactionSignature = require('./smart_transaction_signature');
-var _a = require('./coins'), getMainnet = _a.getMainnet, getNetworkName = _a.getNetworkName;
+var getMainnet = require('./coins').getMainnet;
 var debug = require('debug')('bitgo:utxolib:txbuilder');
 function supportedType(type) {
     return SIGNABLE.indexOf(type) !== -1;
@@ -486,12 +485,12 @@ TransactionBuilder.prototype.setConsensusBranchId = function (consensusBranchId)
     }
     if (!this.inputs.every(function (input) {
         if (input.prevOutType === scriptTypes.SMART_TRANSACTION) {
-            if (input.signatures === undefined || input.signatures.length == 0)
+            if (input.signatures === undefined || input.signatures.length === 0)
                 return true;
             var smartTxSigs = SmartTransactionSignatures.fromChunk(bscript.decompile(input.signatures)[0]);
             if (smartTxSigs.error != null ||
-                smartTxSigs.signatures.length == 0 ||
-                smartTxSigs.signatures.every(function (sig) { return sig.oneSignature.length == 0; })) {
+                smartTxSigs.signatures.length === 0 ||
+                smartTxSigs.signatures.every(function (sig) { return sig.oneSignature.length === 0; })) {
                 return true;
             }
         }
@@ -751,7 +750,7 @@ TransactionBuilder.prototype.sign = function (vin, keyPair, redeemScript, hashTy
         debug('Produced signature (r: %s, s: %s)', signature.r, signature.s);
         if (input.signType === scriptTypes.SMART_TRANSACTION) {
             input.signatures[i] = new SmartTransactionSignatures(1, 1, [
-                new SmartTransactionSignature(1, 1, pubKey, signature.toCompact().slice(1)),
+                new SmartTransactionSignature(1, 1, pubKey, signature.toCompact().slice(1))
             ]).toChunk();
         }
         else
@@ -788,8 +787,8 @@ TransactionBuilder.prototype.__canModifyOutputs = function () {
         if (input.signType === scriptTypes.SMART_TRANSACTION) {
             var smartTxSigs = SmartTransactionSignatures.fromChunk(bscript.decompile(input.signatures)[0]);
             if (smartTxSigs.error != null ||
-                smartTxSigs.signatures.length == 0 ||
-                smartTxSigs.signatures.every(function (sig) { return sig.oneSignature.length == 0; })) {
+                smartTxSigs.signatures.length === 0 ||
+                smartTxSigs.signatures.every(function (sig) { return sig.oneSignature.length === 0; })) {
                 return true;
             }
         }

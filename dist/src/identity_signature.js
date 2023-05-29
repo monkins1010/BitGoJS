@@ -6,17 +6,17 @@ var sha256 = require('./crypto').sha256;
 var createHash = require('create-hash');
 var ECSignature = require('./ecsignature');
 var ECPair = require('./ecpair');
-var VERUS_DATA_SIGNATURE_PREFIX_STRING = "Verus signed data:\n";
+var VERUS_DATA_SIGNATURE_PREFIX_STRING = 'Verus signed data:\n';
 var bufferWriter = new bufferutils.BufferWriter(Buffer.alloc(VERUS_DATA_SIGNATURE_PREFIX_STRING.length + 1));
-bufferWriter.writeVarSlice(Buffer.from("Verus signed data:\n", "utf-8"));
+bufferWriter.writeVarSlice(Buffer.from('Verus signed data:\n', 'utf-8'));
 var VERUS_DATA_SIGNATURE_PREFIX = bufferWriter.buffer;
-var HASH_INVALID = 0;
-var HASH_BLAKE2BMMR = 1;
-var HASH_BLAKE2BMMR2 = 2;
-var HASH_KECCAK = 3;
-var HASH_SHA256D = 4;
+var HASH_INVALID = 0; // eslint-disable-line
+var HASH_BLAKE2BMMR = 1; // eslint-disable-line
+var HASH_BLAKE2BMMR2 = 2; // eslint-disable-line
+var HASH_KECCAK = 3; // eslint-disable-line
+var HASH_SHA256D = 4; // eslint-disable-line
 var HASH_SHA256 = 5;
-var HASH_LASTTYPE = 5;
+var HASH_LASTTYPE = 5; // eslint-disable-line
 var IdentitySignature = /** @class */ (function () {
     function IdentitySignature(network, version, hashType, blockHeight, signatures, chainId, iAddress) {
         if (version === void 0) { version = 2; }
@@ -38,18 +38,18 @@ var IdentitySignature = /** @class */ (function () {
     }
     IdentitySignature.prototype.assertSupported = function () {
         if (this.version !== 1 && this.version !== 2)
-            throw new Error("Unsupported version");
+            throw new Error('Unsupported version');
         if (this.version === 2 && this.hashType !== HASH_SHA256)
-            throw new Error("Unsupported hashtype");
+            throw new Error('Unsupported hashtype');
     };
     IdentitySignature.prototype.hashMessage = function (msg) {
-        var rawMsgBuffer = Buffer.from(msg.toLowerCase(), "utf-8");
+        var rawMsgBuffer = Buffer.from(msg.toLowerCase(), 'utf-8');
         var msgBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(varuint.encodingLength(rawMsgBuffer.length) + rawMsgBuffer.length));
         msgBufferWriter.writeVarSlice(rawMsgBuffer);
         var _msgHash = sha256(msgBufferWriter.buffer);
         var heightBufferWriter = new bufferutils.BufferWriter(Buffer.alloc(4));
         heightBufferWriter.writeUInt32(this.blockHeight);
-        return createHash("sha256")
+        return createHash('sha256')
             .update(VERUS_DATA_SIGNATURE_PREFIX)
             .update(this.chainId)
             .update(heightBufferWriter.buffer)
@@ -71,7 +71,7 @@ var IdentitySignature = /** @class */ (function () {
         var signingAddress = keyPair.getAddress();
         var recid;
         var compactSig;
-        // Try all possible recovery ids until one that can recover the 
+        // Try all possible recovery ids until one that can recover the
         // correct pubkey is found. This is not the most efficient way to do this.
         for (recid = 0; recid < 4; recid++) {
             compactSig = signature.toCompact(recid, true);
@@ -81,15 +81,15 @@ var IdentitySignature = /** @class */ (function () {
                 return compactSig;
             }
         }
-        throw new Error("Failed to generate signature with valid recovery id");
+        throw new Error('Failed to generate signature with valid recovery id');
     };
     // In this case keyPair refers to the ECPair containing at minimum
     // a pubkey. This function returns an array of booleans indicating which
     // signatures passed and failed
     IdentitySignature.prototype.verifyHashOffline = function (hash, signingAddress) {
         this.assertSupported();
-        if (this.signatures.length == 0)
-            throw new Error("No signatures to verify");
+        if (this.signatures.length === 0)
+            throw new Error('No signatures to verify');
         var results = [];
         for (var i = 0; i < this.signatures.length; i++) {
             try {
@@ -150,10 +150,11 @@ var IdentitySignature = /** @class */ (function () {
             bufferWriter.writeVarSlice(sig);
         }
         // avoid slicing unless necessary
-        if (initialOffset !== undefined)
+        if (initialOffset !== undefined) {
             return noBuffer
                 ? bufferWriter.buffer.slice(initialOffset, bufferWriter.offset)
                 : bufferWriter.offset;
+        }
         // TODO (https://github.com/BitGo/bitgo-utxo-lib/issues/11): we shouldn't have to slice the final buffer
         return noBuffer ? bufferWriter.buffer.slice(0, bufferWriter.offset) : bufferWriter.offset;
     };
