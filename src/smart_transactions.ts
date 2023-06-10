@@ -1,12 +1,29 @@
-import { GetAddressUtxosResponse, ReserveTransfer, TokenOutput, toBase58Check } from "verus-typescript-primitives";
+import { CurrencyValueMap, 
+  GetAddressUtxosResponse, 
+  RESERVE_TRANSFER_BURN_CHANGE_PRICE, 
+  RESERVE_TRANSFER_BURN_CHANGE_WEIGHT, 
+  RESERVE_TRANSFER_CONVERT, 
+  RESERVE_TRANSFER_CROSS_SYSTEM, 
+  RESERVE_TRANSFER_MINT_CURRENCY, 
+  RESERVE_TRANSFER_PRECONVERT, 
+  RESERVE_TRANSFER_RESERVE_TO_RESERVE,
+  ReserveTransfer, 
+  TokenOutput, 
+  TransferDestination, 
+  toBase58Check, 
+  RESERVE_TRANSFER_DESTINATION 
+} from "verus-typescript-primitives";
 import { BN } from "bn.js";
 import { Network } from "./networkTypes";
 
 const Transaction = require('./transaction.js');
+const TransactionBuilder = require('./transaction_builder.js');
+const TxDestination = require('./tx_destination.js');
 const script = require('./script.js');
-const evals = require('bitcoin-ops/evals.json')
+const evals = require('bitcoin-ops/evals.json');
+const opcodes = require('bitcoin-ops');
 const OptCCParams = require('./optccparams');
-const templates = require('./templates')
+const templates = require('./templates');
 
 // Hack to force BigNumber to get typeof class instead of BN namespace
 const BNClass = new BN(0);
@@ -29,6 +46,22 @@ type SmartTxParams = {
   n: number,
   data?: TokenOutput|ReserveTransfer,
   values: { [currency: string]: BigNumber }
+}
+
+type OutputParams = {
+  currency: string, // sending currency i-address
+  satoshis: string, // Satoshi satoshis
+  convertto?: string, // i-address of currency to convert to
+  exportto?: string, // i-address of system to export to
+  feecurrency?: string, // i-address of fee currency
+  via?: string, // i-address of currency to convert via,
+  feesatoshis?: string, // Satoshi satoshis of output fee
+  address: TransferDestination,
+  refundto?: TransferDestination,
+  preconvert?: boolean,
+  burn?: boolean,
+  burnweight?: boolean,
+  mintnew?: boolean
 }
 
 export const unpackOutput = (output: Output, systemId: string): { 
@@ -100,8 +133,10 @@ export const unpackOutput = (output: Output, systemId: string): {
 
           ccvalues[systemId] = ccvalues[systemId].add(new BN(output.value));
           resTransfer.reserve_values.value_map.forEach((value, key) => {
-            if (!ccvalues[key]) ccvalues[key] = value;
-            else ccvalues[key] = ccvalues[key].add(value)
+            if (key !== systemId) {
+              if (!ccvalues[key]) ccvalues[key] = value;
+              else ccvalues[key] = ccvalues[key].add(value);
+            }
           })
           data = resTransfer;
           break;
@@ -115,8 +150,10 @@ export const unpackOutput = (output: Output, systemId: string): {
 
           ccvalues[systemId] = ccvalues[systemId].add(new BN(output.value));
           resOutput.reserve_values.value_map.forEach((value, key) => {
-            if (!ccvalues[key]) ccvalues[key] = value;
-            else ccvalues[key] = ccvalues[key].add(value)
+            if (key !== systemId) {
+              if (!ccvalues[key]) ccvalues[key] = value;
+              else ccvalues[key] = ccvalues[key].add(value);
+            }
           })
           data = resOutput;
           break;
@@ -167,7 +204,7 @@ export const unpackOutput = (output: Output, systemId: string): {
   }
 }
 
-export const validateFundedTransaction = (
+export const validateFundedCurrencyTransfer = (
   systemId: string,
   fundedTxHex: string, 
   unfundedTxHex: string,
@@ -393,4 +430,140 @@ export const validateFundedTransaction = (
   }
 
   return { valid: true, in: _in, out: _out, change: _change, fees: _fees, sent: _sent };
+}
+
+export const createUnfundedCurrencyTransfer = (
+  systemId: string,
+  outputs: Array<OutputParams>,
+  network: Network,
+  expiryHeight: number = 0,
+  version: number = 4,
+  versionGroupId: number = 0x892f2085
+): string => {
+  const txb = new TransactionBuilder(network);
+
+  txb.setVersion(version);
+  txb.setExpiryHeight(expiryHeight);
+  txb.setVersionGroupId(versionGroupId);
+
+  for (const output of outputs) {
+    if (!output.currency) throw new Error("Must specify currency i-address for all outputs");
+    if (output.satoshis == null) throw new Error("Must specify satoshis for all outputs");
+    if (output.address == null) throw new Error("Must specify address for all outputs");
+    
+    const params: OutputParams = {
+      currency: output.currency,
+      satoshis: output.satoshis,
+      convertto: output.convertto ? output.convertto : output.currency,
+      exportto: output.exportto,
+      feecurrency: output.feecurrency ? output.feecurrency : systemId,
+      feesatoshis: output.feesatoshis ? output.feesatoshis : "300000",
+      via: output.via,
+      address: output.address,
+      refundto: output.refundto,
+      preconvert: !!(output.preconvert),
+      burnweight: !!(output.burnweight),
+      burn: !!(output.burn),
+      mintnew: !!(output.mintnew)
+    }
+
+    // fee_currency_id?: string;
+    // fee_amount?: BigNumber;
+    // transfer_destination?: TransferDestination;
+    // dest_currency_id?: string;
+    // second_reserve_id?: string;
+    // dest_system_id?: string;
+
+    const isReserveTransfer = output.feecurrency != null || 
+                              output.feesatoshis != null || 
+                              output.convertto != null || 
+                              output.exportto != null ||
+                              output.via != null;
+    
+    const satoshis = new BN(params.satoshis, 10)
+    const values = new CurrencyValueMap({
+      value_map: new Map([[params.currency, satoshis]]),
+      multivalue: false
+    })
+    const nativeFeeValue = params.feecurrency === systemId && isReserveTransfer ? new BN(params.feesatoshis) : new BN(0);
+    const nativeValue = params.currency === systemId ? satoshis.add(nativeFeeValue) : nativeFeeValue;
+
+    let outMaster;
+    let outParams;
+    
+    if (isReserveTransfer) {
+      const destination = new TxDestination(RESERVE_TRANSFER_DESTINATION.type.toNumber(), RESERVE_TRANSFER_DESTINATION.destination_bytes)
+      outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+      let flags = new BN(1);
+      const version = new BN(1, 10);
+
+      if (params.via != null) flags = flags.xor(RESERVE_TRANSFER_RESERVE_TO_RESERVE);
+      if (params.exportto != null) flags = flags.xor(RESERVE_TRANSFER_CROSS_SYSTEM);
+      if (params.convertto != null) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
+      if (params.preconvert) flags = flags.xor(RESERVE_TRANSFER_PRECONVERT);
+      if (params.mintnew) flags = flags.xor(RESERVE_TRANSFER_MINT_CURRENCY);
+      if (params.burn) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_PRICE);
+      if (params.burnweight) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
+
+      const resTransfer = new ReserveTransfer({
+        values,
+        version,
+        flags,
+        fee_currency_id: params.feecurrency,
+        fee_amount: new BN(params.feesatoshis, 10),
+        transfer_destination: params.address,
+        dest_currency_id: output.via ? output.via : params.convertto,
+        second_reserve_id: params.convertto,
+        dest_system_id: params.exportto
+      })
+
+      outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
+    } else {
+      const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
+
+      // Assume token output
+      outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+      const version = new BN(1, 10);
+
+      const tokenOutput = new TokenOutput({
+        values,
+        version
+      })
+
+      outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+    }
+
+    const outputScript = script.compile([
+      outMaster.toChunk(),
+      opcodes.OP_CHECKCRYPTOCONDITION,
+      outParams.toChunk(),
+      opcodes.OP_DROP,
+    ]);
+
+    txb.addOutput(outputScript, nativeValue.toNumber());
+  }
+
+  return txb.buildIncomplete().toHex();
+}
+
+export const getFundedTxBuilder = (
+  fundedTxHex: string,
+  network: Network,
+  prevOutScripts: Array<Buffer>
+) => {
+  const tx = Transaction.fromHex(fundedTxHex, network);
+  const inputs = tx.ins;
+  var txb = TransactionBuilder.fromTransaction(tx, network);
+  txb.inputs = [];
+  txb.tx.ins = [];
+
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const prevoutscript = prevOutScripts[i];
+    delete txb.prevTxMap[input.hash.toString('hex') + ':' + input.index];
+
+    txb.addInput(input.hash, input.index, input.sequence, prevoutscript);
+  }
+
+  return txb;
 }
