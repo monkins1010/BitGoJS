@@ -14,11 +14,12 @@ var templates = require('./templates');
 // Hack to force BigNumber to get typeof class instead of BN namespace
 var BNClass = new bn_js_1.BN(0);
 var unpackOutput = function (output, systemId) {
-    var _a;
+    var _a, _b;
     // Verify change output
     var outputScript = output.script;
     var outputType = templates.classifyOutput(outputScript);
     var values = (_a = {}, _a[systemId] = new bn_js_1.BN(0), _a);
+    var fees = (_b = {}, _b[systemId] = new bn_js_1.BN(0), _b);
     var destinations = [];
     var master;
     var params = [];
@@ -49,9 +50,10 @@ var unpackOutput = function (output, systemId) {
             }
         };
         var processOptCCParam = function (ccparam) {
-            var _a;
+            var _a, _b;
             var data;
             var ccvalues = (_a = {}, _a[systemId] = new bn_js_1.BN(0), _a);
+            var ccfees = (_b = {}, _b[systemId] = new bn_js_1.BN(0), _b);
             switch (ccparam.evalCode) {
                 case evals.EVAL_NONE:
                     if (ccparam.vData.length !== 0) {
@@ -75,6 +77,9 @@ var unpackOutput = function (output, systemId) {
                         }
                     });
                     data = resTransfer;
+                    var fee = resTransfer.fee_amount;
+                    var feecurrency = resTransfer.fee_currency_id;
+                    ccfees[feecurrency] = fee;
                     break;
                 case evals.EVAL_RESERVE_OUTPUT:
                     if (ccparam.vData.length !== 1) {
@@ -102,16 +107,17 @@ var unpackOutput = function (output, systemId) {
                 m: ccparam.m,
                 n: ccparam.n,
                 data: data,
-                values: ccvalues
+                values: ccvalues,
+                fees: ccfees
             };
         };
         master = processOptCCParam(masterOptCC);
-        for (var _i = 0, _b = masterOptCC.destinations; _i < _b.length; _i++) {
-            var destination = _b[_i];
+        for (var _i = 0, _c = masterOptCC.destinations; _i < _c.length; _i++) {
+            var destination = _c[_i];
             processDestination(destination);
         }
-        for (var _c = 0, paramsOptCC_1 = paramsOptCC; _c < paramsOptCC_1.length; _c++) {
-            var paramsCc = paramsOptCC_1[_c];
+        for (var _d = 0, paramsOptCC_1 = paramsOptCC; _d < paramsOptCC_1.length; _d++) {
+            var paramsCc = paramsOptCC_1[_d];
             var processedParams = processOptCCParam(paramsCc);
             params.push(processedParams);
             for (var key in processedParams.values) {
@@ -121,8 +127,15 @@ var unpackOutput = function (output, systemId) {
                 else
                     values[key] = values[key].add(value);
             }
-            for (var _d = 0, _e = paramsCc.destinations; _d < _e.length; _d++) {
-                var destination = _e[_d];
+            for (var key in processedParams.fees) {
+                var fee = processedParams.fees[key];
+                if (!fees[key])
+                    fees[key] = fee;
+                else
+                    fees[key] = fees[key].add(fee);
+            }
+            for (var _e = 0, _f = paramsCc.destinations; _e < _f.length; _e++) {
+                var destination = _f[_e];
                 processDestination(destination);
             }
         }
@@ -133,6 +146,7 @@ var unpackOutput = function (output, systemId) {
     return {
         destinations: destinations,
         values: values,
+        fees: fees,
         type: outputType,
         master: master,
         params: params.length > 0 ? params : undefined
@@ -140,10 +154,11 @@ var unpackOutput = function (output, systemId) {
 };
 exports.unpackOutput = unpackOutput;
 var validateFundedCurrencyTransfer = function (systemId, fundedTxHex, unfundedTxHex, changeAddr, network, utxoList) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     var amountsIn = (_a = {}, _a[systemId] = new bn_js_1.BN(0), _a);
     var amountsOut = (_b = {}, _b[systemId] = new bn_js_1.BN(0), _b);
     var amountChange = (_c = {}, _c[systemId] = new bn_js_1.BN(0), _c);
+    var amountsFee = (_d = {}, _d[systemId] = new bn_js_1.BN(0), _d);
     var fundedTx = Transaction.fromHex(fundedTxHex, network);
     var unfundedTx = Transaction.fromHex(unfundedTxHex, network);
     var fundedTxComparison = Transaction.fromHex(fundedTxHex, network);
@@ -225,8 +240,8 @@ var validateFundedCurrencyTransfer = function (systemId, fundedTxHex, unfundedTx
         }
     };
     // Verify all inputs are correct and count their amounts
-    for (var _i = 0, _d = fundedTx.ins; _i < _d.length; _i++) {
-        var input = _d[_i];
+    for (var _i = 0, _e = fundedTx.ins; _i < _e.length; _i++) {
+        var input = _e[_i];
         var state_1 = _loop_1(input);
         if (typeof state_1 === "object")
             return state_1.value;
@@ -243,6 +258,13 @@ var validateFundedCurrencyTransfer = function (systemId, fundedTxHex, unfundedTx
                 }
                 else
                     amountsOut[key] = amountsOut[key].add(outputInfo.values[key]);
+            }
+            for (var key in outputInfo.fees) {
+                if (amountsFee[key] == null) {
+                    amountsFee[key] = new bn_js_1.BN(outputInfo.fees[key] != null ? outputInfo.fees[key] : 0);
+                }
+                else
+                    amountsFee[key] = amountsFee[key].add(outputInfo.fees[key]);
             }
         }
         catch (e) {
@@ -311,12 +333,16 @@ var validateFundedCurrencyTransfer = function (systemId, fundedTxHex, unfundedTx
     for (var key in amountsOut) {
         _out[key] = amountsOut[key].toString();
     }
+    for (var key in amountsFee) {
+        _fees[key] = amountsFee[key].toString();
+    }
     for (var key in amountChange) {
         _change[key] = amountChange[key].toString();
     }
     for (var key in amountsIn) {
         var outVal = amountsOut[key] != null ? amountsOut[key] : new bn_js_1.BN(0);
-        _fees[key] = (amountsIn[key].sub(outVal)).toString();
+        var feeVal = _fees[key] ? new bn_js_1.BN(_fees[key]) : new bn_js_1.BN(0);
+        _fees[key] = (feeVal.add((amountsIn[key].sub(outVal)))).toString();
     }
     for (var key in amountsIn) {
         var changeVal = amountChange[key] != null ? amountChange[key] : new bn_js_1.BN(0);

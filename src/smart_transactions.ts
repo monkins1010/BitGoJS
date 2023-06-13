@@ -45,7 +45,8 @@ type SmartTxParams = {
   m: number,
   n: number,
   data?: TokenOutput|ReserveTransfer,
-  values: { [currency: string]: BigNumber }
+  values: { [currency: string]: BigNumber },
+  fees: { [currency: string]: BigNumber }
 }
 
 type OutputParams = {
@@ -66,7 +67,8 @@ type OutputParams = {
 
 export const unpackOutput = (output: Output, systemId: string): { 
   destinations: Array<string>, 
-  values: { [currency: string]: BigNumber }, 
+  values: { [currency: string]: BigNumber },
+  fees: { [currency: string]: BigNumber },
   type: string,
   master?: SmartTxParams,
   params?: Array<SmartTxParams>
@@ -75,6 +77,7 @@ export const unpackOutput = (output: Output, systemId: string): {
   const outputScript = output.script
   const outputType = templates.classifyOutput(outputScript);
   const values: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
+  const fees: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
   const destinations: Array<string> = [];
   let master: typeof OptCCParams;
   const params: Array<typeof OptCCParams> = [];
@@ -114,6 +117,7 @@ export const unpackOutput = (output: Output, systemId: string): {
     const processOptCCParam = (ccparam): SmartTxParams => {
       let data: TokenOutput|ReserveTransfer;
       const ccvalues: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
+      const ccfees: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
 
       switch (ccparam.evalCode) {
         case evals.EVAL_NONE:
@@ -139,6 +143,12 @@ export const unpackOutput = (output: Output, systemId: string): {
             }
           })
           data = resTransfer;
+
+          const fee = resTransfer.fee_amount;
+          const feecurrency = resTransfer.fee_currency_id;
+          
+          ccfees[feecurrency] = fee;
+
           break;
         case evals.EVAL_RESERVE_OUTPUT:
           if (ccparam.vData.length !== 1) {
@@ -167,7 +177,8 @@ export const unpackOutput = (output: Output, systemId: string): {
         m: ccparam.m,
         n: ccparam.n,
         data: data,
-        values: ccvalues
+        values: ccvalues,
+        fees: ccfees
       }
     }
 
@@ -187,6 +198,13 @@ export const unpackOutput = (output: Output, systemId: string): {
         else values[key] = values[key].add(value)
       }
 
+      for (const key in processedParams.fees) {
+        const fee = processedParams.fees[key]
+
+        if (!fees[key]) fees[key] = fee;
+        else fees[key] = fees[key].add(fee)
+      }
+
       for (const destination of paramsCc.destinations) {
         processDestination(destination)
       }
@@ -198,6 +216,7 @@ export const unpackOutput = (output: Output, systemId: string): {
   return {
     destinations, 
     values, 
+    fees,
     type: outputType,
     master: master,
     params: params.length > 0 ? params : undefined
@@ -223,6 +242,7 @@ export const validateFundedCurrencyTransfer = (
   const amountsIn: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
   const amountsOut: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
   const amountChange: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
+  const amountsFee: { [currency: string]: BigNumber } = { [systemId]: new BN(0) };
 
   const fundedTx = Transaction.fromHex(fundedTxHex, network);
   const unfundedTx = Transaction.fromHex(unfundedTxHex, network);
@@ -337,6 +357,12 @@ export const validateFundedCurrencyTransfer = (
           amountsOut[key] = new BN(outputInfo.values[key] != null ? outputInfo.values[key] : 0)
         } else amountsOut[key] = amountsOut[key].add(outputInfo.values[key])
       }
+
+      for (const key in outputInfo.fees) {
+        if (amountsFee[key] == null) {
+          amountsFee[key] = new BN(outputInfo.fees[key] != null ? outputInfo.fees[key] : 0)
+        } else amountsFee[key] = amountsFee[key].add(outputInfo.fees[key])
+      }
     } catch(e) {
       return {
         valid: false,
@@ -412,14 +438,19 @@ export const validateFundedCurrencyTransfer = (
     _out[key] = amountsOut[key].toString()
   }
 
+  for (const key in amountsFee) {
+    _fees[key] = amountsFee[key].toString()
+  }
+
   for (const key in amountChange) {
     _change[key] = amountChange[key].toString()
   }
 
   for (const key in amountsIn) {
     const outVal = amountsOut[key] != null ? amountsOut[key] : new BN(0);
+    const feeVal = _fees[key] ? new BN(_fees[key]) : new BN(0);
 
-    _fees[key] = (amountsIn[key].sub(outVal)).toString()
+    _fees[key] = (feeVal.add((amountsIn[key].sub(outVal)))).toString()
   }
 
   for (const key in amountsIn) {
