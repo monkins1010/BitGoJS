@@ -396,7 +396,8 @@ export const validateFundedCurrencyTransfer = (
           throw new Error("Change smartx master must be EVAL_NONE")
         }
 
-        if (!(master.m === 1 && master.n === 1 && param.m === 1 && param.n === 1)) {
+        if (!((master.m === 0 && master.n === 0 || master.m === 1 && master.n === 1) && 
+              param.m === 1 && param.n === 1)) {
           throw new Error("Multisig change unsupported")
         }
 

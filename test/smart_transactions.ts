@@ -71,6 +71,115 @@ describe('smarttxs', function () {
     })
   });
 
+  it('validates tx with 0 m and 0 n on master optccparams on change', function () {
+    const unfundedtx = "0400008085202f8900010000000000000000531a040300010114dceb28eb662cdb099d5abe534c2a2bef41779a3acc35040309010114dceb28eb662cdb099d5abe534c2a2bef41779a3a1a016cf4bfcba175992d92f445d154cc0e7fe16b9e8e82dbea93007500000000462801000000000000000000000000"
+    const fundedtx = "0400008085202f89021bf610a2b1c6ed4542519c7498bb1bc5fb59a8d13866de55360b611a0dc548d00000000000ffffffff8cfecee126bdd1f66aad742edfa47d77b6bf5a76129288bd70a3d5aa2b4164cc0000000000ffffffff02f0a29a3b0000000024050403000000cc1b04030001011504cac28788c8b70db738fc3ee9e28923004ffbc71f750000000000000000531a040300010114dceb28eb662cdb099d5abe534c2a2bef41779a3acc35040309010114dceb28eb662cdb099d5abe534c2a2bef41779a3a1a016cf4bfcba175992d92f445d154cc0e7fe16b9e8e82dbea93007500000000462801000000000000000000000000"
+    const changeaddr = "iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R"
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const utxos = [
+      {
+        address: 'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        blocktime: 1684173528,
+        height: 32869,
+        isspendable: 0,
+        outputIndex: 1,
+        satoshis: 0,
+        script:
+          '1b04030001011504cac28788c8b70db738fc3ee9e28923004ffbc71fcc4c7904030a01011504cac28788c8b70db738fc3ee9e28923004ffbc71f4c5c010000000f6c6f6e675f707265636f6e76657274a6ef9ea235635e328124ff3429db9f9e91b64e2d00000000000000000000000000000000000000006be9f5843e2b30306dcd0d19bf6c2067462b3771adc76f217c1f5686f44ecfd075',
+        txid: '47e3038477735d70c4e83a1d966841edae6017717139694aa7dc84416412afe6',
+        currencyvalues: {},
+        currencynames: {}
+      },
+      {
+        address: 'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        addresses: [
+          'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+          'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+          'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        ],
+        blocktime: 1686747776,
+        height: 74363,
+        isspendable: 0,
+        outputIndex: 0,
+        satoshis: 0,
+        script:
+          '4704030001031504cac28788c8b70db738fc3ee9e28923004ffbc71f1504cac28788c8b70db738fc3ee9e28923004ffbc71f1504cac28788c8b70db738fc3ee9e28923004ffbc71fcc4cde04030e01011504cac28788c8b70db738fc3ee9e28923004ffbc71f4c8903000000010000000114dceb28eb662cdb099d5abe534c2a2bef41779a3a01000000a6ef9ea235635e328124ff3429db9f9e91b64e2d0f6c6f6e675f707265636f6e766572740000cac28788c8b70db738fc3ee9e28923004ffbc71fcac28788c8b70db738fc3ee9e28923004ffbc71f00a6ef9ea235635e328124ff3429db9f9e91b64e2d000000001b04030f01011504cac28788c8b70db738fc3ee9e28923004ffbc71f1b04031001011504cac28788c8b70db738fc3ee9e28923004ffbc71f75',
+        txid: '12bbfd6c25f2e84821176670f8d5a0c7db7faa2cf5a0bbcf468213905cf1fefa',
+        currencyvalues: {},
+        currencynames: {}
+      },
+      {
+        address: 'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        blocktime: 1686751804,
+        currencyvalues: {iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: 10},
+        height: 74424,
+        isspendable: 1,
+        outputIndex: 0,
+        satoshis: 0,
+        script:
+          '1b04030001011504cac28788c8b70db738fc3ee9e28923004ffbc71fcc3604030901011504cac28788c8b70db738fc3ee9e28923004ffbc71f1a016cf4bfcba175992d92f445d154cc0e7fe16b9e8e82dbea930075',
+        txid: 'cc64412baad5a370bd889212765abfb6777da4df2e74ad6af6d1bd26e1cefe8c',
+        currencynames: {}
+      },
+      {
+        address: 'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        blocktime: 1686754497,
+        currencyvalues: {iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: 20},
+        height: 74464,
+        isspendable: 1,
+        outputIndex: 0,
+        satoshis: 0,
+        script:
+          '1b04030001011504cac28788c8b70db738fc3ee9e28923004ffbc71fcc3604030901011504cac28788c8b70db738fc3ee9e28923004ffbc71f1a016cf4bfcba175992d92f445d154cc0e7fe16b9e8e86b8d5a70075',
+        txid: '0c41b4d7fc0ca06e8da536f64340a1db39b92eb7c3d4d85ee01071e79ecd23e0',
+        currencynames: {}
+      },
+      {
+        address: 'iMxcxy7b8B62UM8sumRpjSMJzo95ZKLE5R',
+        blocktime: 1686754896,
+        currencyvalues: {iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: 10},
+        height: 74466,
+        isspendable: 1,
+        outputIndex: 0,
+        satoshis: 1000000000,
+        script:
+          '050403000000cc1b04030001011504cac28788c8b70db738fc3ee9e28923004ffbc71f75',
+        txid: 'd048c50d1a610b3655de6638d1a859fbc51bbb98749c514245edc6b1a210f61b',
+        currencynames: {}
+      },
+    ];
+
+    const validation = validateFundedCurrencyTransfer(
+      system, 
+      fundedtx, 
+      unfundedtx, 
+      changeaddr, 
+      networks.verustest, 
+      utxos
+    )
+
+    assert.deepStrictEqual(validation, {
+      valid: true,
+      in: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '1000000000',
+        iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: '1000000000'
+      },
+      out: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '999990000',
+        iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: '1000000000'
+      },
+      change: { iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '999990000' },
+      fees: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '10000',
+        iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: '0'
+      },
+      sent: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '0',
+        iDQdcGSXMXzo8zURyCr6K3HoPYtsKxP9ns: '1000000000'
+      }
+    })
+  });
+
   it('fails on tx with no inputs', function () {
     const unfundedtx = "0400008085202f89000100e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000"
     const fundedtx = '0400008085202f890002d066e20b00000000781a040300010114f9ff43bb7debfcb57a19eeb6b67e68733edbba55cc4c59040309010114f9ff43bb7debfcb57a19eeb6b67e68733edbba553e86fefeff010275939018c507ed9cf366d309d4614b2e43ca3c0090603008db080000848374dd2a47335f0252c8caa066b94de4bf800f804a5d05000000007500e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000'
