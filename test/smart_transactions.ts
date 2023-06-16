@@ -656,6 +656,33 @@ describe('smarttxs', function () {
     assert.equal(unfundedTransfer, "0400008085202f890001e074fa0500000000c31a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca4040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c8801a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c1008703a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e972325aa0d080ddfdef2d50028cfeb07a834d42bf5554852c4e9fb1d4c4291fc093e41ce2c7befa40767500000000b80501000000000000000000000000")
   })
 
+  it('creates unfunded PKH tx', function () {
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const destbytes = fromBase58Check("RVRJSunui8AqYD7kb868eeKW5h8dvMu2YP").hash
+
+    const unfundedTransfer = createUnfundedCurrencyTransfer(
+      system,
+      [{
+        currency: system,
+        satoshis: "2499980000",
+        address: new TransferDestination({
+          type: DEST_PKH,
+          destination_bytes: destbytes
+        }),
+        preconvert: false,
+        burn: false,
+        burnweight: false,
+        mintnew: false
+      }],
+      networks.verustest,
+      77379,
+      4,
+      0x892f2085
+    )
+
+    assert.equal(unfundedTransfer, "0400008085202f890001e0aa0295000000001976a914dceb28eb662cdb099d5abe534c2a2bef41779a3a88ac00000000432e01000000000000000000000000")
+  })
+
   it('fails on tx with multisig params on change', function () {
     const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
     const destbytes = fromBase58Check("RF8ZdvjvGMNdtu3jNwcmaTDeU8hFJ28ajN").hash

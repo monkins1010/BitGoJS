@@ -402,58 +402,64 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
         });
         var nativeFeeValue = params.feecurrency === systemId && isReserveTransfer ? new bn_js_1.BN(params.feesatoshis) : new bn_js_1.BN(0);
         var nativeValue = params.currency === systemId ? satoshis.add(nativeFeeValue) : nativeFeeValue;
-        var outMaster = void 0;
-        var outParams = void 0;
-        if (isReserveTransfer) {
-            var destination = new TxDestination(verus_typescript_primitives_1.RESERVE_TRANSFER_DESTINATION.type.toNumber(), verus_typescript_primitives_1.RESERVE_TRANSFER_DESTINATION.destination_bytes);
-            outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-            var flags = new bn_js_1.BN(1);
-            var version_1 = new bn_js_1.BN(1, 10);
-            if (params.via != null)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_RESERVE_TO_RESERVE);
-            if (params.exportto != null)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CROSS_SYSTEM);
-            if (params.convertto != null)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CONVERT);
-            if (params.preconvert)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_PRECONVERT);
-            if (params.mintnew)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_MINT_CURRENCY);
-            if (params.burn)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_PRICE);
-            if (params.burnweight)
-                flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
-            var resTransfer = new verus_typescript_primitives_1.ReserveTransfer({
-                values: values,
-                version: version_1,
-                flags: flags,
-                fee_currency_id: params.feecurrency,
-                fee_amount: new bn_js_1.BN(params.feesatoshis, 10),
-                transfer_destination: params.address,
-                dest_currency_id: output.via ? output.via : params.convertto,
-                second_reserve_id: params.convertto,
-                dest_system_id: params.exportto
-            });
-            outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
+        var isPKH = !isReserveTransfer && params.currency === systemId && params.address.type === verus_typescript_primitives_1.DEST_PKH;
+        if (isPKH) {
+            txb.addOutput(params.address.getAddressString(), nativeValue.toNumber());
         }
         else {
-            var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
-            // Assume token output
-            outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-            var version_2 = new bn_js_1.BN(1, 10);
-            var tokenOutput = new verus_typescript_primitives_1.TokenOutput({
-                values: values,
-                version: version_2
-            });
-            outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+            var outMaster = void 0;
+            var outParams = void 0;
+            if (isReserveTransfer) {
+                var destination = new TxDestination(verus_typescript_primitives_1.RESERVE_TRANSFER_DESTINATION.type.toNumber(), verus_typescript_primitives_1.RESERVE_TRANSFER_DESTINATION.destination_bytes);
+                outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+                var flags = new bn_js_1.BN(1);
+                var version_1 = new bn_js_1.BN(1, 10);
+                if (params.via != null)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_RESERVE_TO_RESERVE);
+                if (params.exportto != null)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CROSS_SYSTEM);
+                if (params.convertto != null)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CONVERT);
+                if (params.preconvert)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_PRECONVERT);
+                if (params.mintnew)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_MINT_CURRENCY);
+                if (params.burn)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_PRICE);
+                if (params.burnweight)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
+                var resTransfer = new verus_typescript_primitives_1.ReserveTransfer({
+                    values: values,
+                    version: version_1,
+                    flags: flags,
+                    fee_currency_id: params.feecurrency,
+                    fee_amount: new bn_js_1.BN(params.feesatoshis, 10),
+                    transfer_destination: params.address,
+                    dest_currency_id: output.via ? output.via : params.convertto,
+                    second_reserve_id: params.convertto,
+                    dest_system_id: params.exportto
+                });
+                outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
+            }
+            else {
+                var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
+                // Assume token output
+                outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+                var version_2 = new bn_js_1.BN(1, 10);
+                var tokenOutput = new verus_typescript_primitives_1.TokenOutput({
+                    values: values,
+                    version: version_2
+                });
+                outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+            }
+            var outputScript = script.compile([
+                outMaster.toChunk(),
+                opcodes.OP_CHECKCRYPTOCONDITION,
+                outParams.toChunk(),
+                opcodes.OP_DROP,
+            ]);
+            txb.addOutput(outputScript, nativeValue.toNumber());
         }
-        var outputScript = script.compile([
-            outMaster.toChunk(),
-            opcodes.OP_CHECKCRYPTOCONDITION,
-            outParams.toChunk(),
-            opcodes.OP_DROP,
-        ]);
-        txb.addOutput(outputScript, nativeValue.toNumber());
     }
     return txb.buildIncomplete().toHex();
 };

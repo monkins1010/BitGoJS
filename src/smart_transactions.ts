@@ -11,7 +11,8 @@ import { CurrencyValueMap,
   TokenOutput, 
   TransferDestination, 
   toBase58Check, 
-  RESERVE_TRANSFER_DESTINATION 
+  RESERVE_TRANSFER_DESTINATION, 
+  DEST_PKH
 } from "verus-typescript-primitives";
 import { BN } from "bn.js";
 import { Network } from "./networkTypes";
@@ -519,60 +520,65 @@ export const createUnfundedCurrencyTransfer = (
     })
     const nativeFeeValue = params.feecurrency === systemId && isReserveTransfer ? new BN(params.feesatoshis) : new BN(0);
     const nativeValue = params.currency === systemId ? satoshis.add(nativeFeeValue) : nativeFeeValue;
+    const isPKH = !isReserveTransfer && params.currency === systemId && params.address.type === DEST_PKH;
 
-    let outMaster;
-    let outParams;
-    
-    if (isReserveTransfer) {
-      const destination = new TxDestination(RESERVE_TRANSFER_DESTINATION.type.toNumber(), RESERVE_TRANSFER_DESTINATION.destination_bytes)
-      outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-      let flags = new BN(1);
-      const version = new BN(1, 10);
-
-      if (params.via != null) flags = flags.xor(RESERVE_TRANSFER_RESERVE_TO_RESERVE);
-      if (params.exportto != null) flags = flags.xor(RESERVE_TRANSFER_CROSS_SYSTEM);
-      if (params.convertto != null) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
-      if (params.preconvert) flags = flags.xor(RESERVE_TRANSFER_PRECONVERT);
-      if (params.mintnew) flags = flags.xor(RESERVE_TRANSFER_MINT_CURRENCY);
-      if (params.burn) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_PRICE);
-      if (params.burnweight) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
-
-      const resTransfer = new ReserveTransfer({
-        values,
-        version,
-        flags,
-        fee_currency_id: params.feecurrency,
-        fee_amount: new BN(params.feesatoshis, 10),
-        transfer_destination: params.address,
-        dest_currency_id: output.via ? output.via : params.convertto,
-        second_reserve_id: params.convertto,
-        dest_system_id: params.exportto
-      })
-
-      outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
+    if (isPKH) {
+      txb.addOutput(params.address.getAddressString(), nativeValue.toNumber());
     } else {
-      const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
-
-      // Assume token output
-      outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-      const version = new BN(1, 10);
-
-      const tokenOutput = new TokenOutput({
-        values,
-        version
-      })
-
-      outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+      let outMaster;
+      let outParams;
+      
+      if (isReserveTransfer) {
+        const destination = new TxDestination(RESERVE_TRANSFER_DESTINATION.type.toNumber(), RESERVE_TRANSFER_DESTINATION.destination_bytes)
+        outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+        let flags = new BN(1);
+        const version = new BN(1, 10);
+  
+        if (params.via != null) flags = flags.xor(RESERVE_TRANSFER_RESERVE_TO_RESERVE);
+        if (params.exportto != null) flags = flags.xor(RESERVE_TRANSFER_CROSS_SYSTEM);
+        if (params.convertto != null) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
+        if (params.preconvert) flags = flags.xor(RESERVE_TRANSFER_PRECONVERT);
+        if (params.mintnew) flags = flags.xor(RESERVE_TRANSFER_MINT_CURRENCY);
+        if (params.burn) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_PRICE);
+        if (params.burnweight) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
+  
+        const resTransfer = new ReserveTransfer({
+          values,
+          version,
+          flags,
+          fee_currency_id: params.feecurrency,
+          fee_amount: new BN(params.feesatoshis, 10),
+          transfer_destination: params.address,
+          dest_currency_id: output.via ? output.via : params.convertto,
+          second_reserve_id: params.convertto,
+          dest_system_id: params.exportto
+        })
+  
+        outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
+      } else {
+        const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
+  
+        // Assume token output
+        outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+        const version = new BN(1, 10);
+  
+        const tokenOutput = new TokenOutput({
+          values,
+          version
+        })
+  
+        outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+      }
+  
+      const outputScript = script.compile([
+        outMaster.toChunk(),
+        opcodes.OP_CHECKCRYPTOCONDITION,
+        outParams.toChunk(),
+        opcodes.OP_DROP,
+      ]);
+  
+      txb.addOutput(outputScript, nativeValue.toNumber());
     }
-
-    const outputScript = script.compile([
-      outMaster.toChunk(),
-      opcodes.OP_CHECKCRYPTOCONDITION,
-      outParams.toChunk(),
-      opcodes.OP_DROP,
-    ]);
-
-    txb.addOutput(outputScript, nativeValue.toNumber());
   }
 
   return txb.buildIncomplete().toHex();
