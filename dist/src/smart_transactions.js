@@ -382,7 +382,8 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
             preconvert: !!(output.preconvert),
             burnweight: !!(output.burnweight),
             burn: !!(output.burn),
-            mintnew: !!(output.mintnew)
+            mintnew: !!(output.mintnew),
+            importtosource: !!(output.importtosource)
         };
         // fee_currency_id?: string;
         // fee_amount?: BigNumber;
@@ -414,6 +415,8 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
                 outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
                 var flags = new bn_js_1.BN(1);
                 var version_1 = new bn_js_1.BN(1, 10);
+                if (params.importtosource)
+                    flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_IMPORT_TO_SOURCE);
                 if (params.via != null)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_RESERVE_TO_RESERVE);
                 if (params.exportto != null)

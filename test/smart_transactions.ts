@@ -656,6 +656,43 @@ describe('smarttxs', function () {
     assert.equal(unfundedTransfer, "0400008085202f890001e074fa0500000000c31a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca4040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c8801a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c1008703a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e972325aa0d080ddfdef2d50028cfeb07a834d42bf5554852c4e9fb1d4c4291fc093e41ce2c7befa40767500000000b80501000000000000000000000000")
   })
 
+  it('creates unfunded conversion with import to source', function () {
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const destbytes = fromBase58Check("RF8ZdvjvGMNdtu3jNwcmaTDeU8hFJ28ajN").hash
+
+    const unfundedTransfer = createUnfundedCurrencyTransfer(
+      system,
+      [{
+        currency: "iBBRjDbPf3wdFpghLotJQ3ESjtPBxn6NS3",
+        satoshis: "100000000",
+        convertto: system,
+        feecurrency: system,
+        via: "i84mndBk2Znydpgm9T9pTjVvBnHkhErzLt",
+        address: new TransferDestination({
+          type: DEST_PKH.xor(FLAG_DEST_AUX),
+          destination_bytes: destbytes,
+          aux_dests: [
+            new TransferDestination({
+              type: DEST_PKH,
+              destination_bytes: destbytes
+            })
+          ]
+        }),
+        preconvert: false,
+        burn: false,
+        burnweight: false,
+        mintnew: false,
+        importtosource: true
+      }],
+      networks.verustest,
+      70000,
+      4,
+      0x892f2085
+    )
+
+    assert.equal(unfundedTransfer, "0400008085202f890001e093040000000000c31a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca4040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c880154852c4e9fb1d4c4291fc093e41ce2c7befa4076aed6c1008b03a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e972325aa0d080ddfdef2d50028cfeb07a834d42bf55a6ef9ea235635e328124ff3429db9f9e91b64e2d7500000000701101000000000000000000000000")
+  })
+
   it('creates unfunded PKH tx', function () {
     const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
     const destbytes = fromBase58Check("RVRJSunui8AqYD7kb868eeKW5h8dvMu2YP").hash

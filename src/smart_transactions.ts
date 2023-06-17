@@ -7,6 +7,7 @@ import { CurrencyValueMap,
   RESERVE_TRANSFER_MINT_CURRENCY, 
   RESERVE_TRANSFER_PRECONVERT, 
   RESERVE_TRANSFER_RESERVE_TO_RESERVE,
+  RESERVE_TRANSFER_IMPORT_TO_SOURCE,
   ReserveTransfer, 
   TokenOutput, 
   TransferDestination, 
@@ -63,7 +64,8 @@ type OutputParams = {
   preconvert?: boolean,
   burn?: boolean,
   burnweight?: boolean,
-  mintnew?: boolean
+  mintnew?: boolean,
+  importtosource?: boolean
 }
 
 export const unpackOutput = (output: Output, systemId: string): { 
@@ -497,7 +499,8 @@ export const createUnfundedCurrencyTransfer = (
       preconvert: !!(output.preconvert),
       burnweight: !!(output.burnweight),
       burn: !!(output.burn),
-      mintnew: !!(output.mintnew)
+      mintnew: !!(output.mintnew),
+      importtosource: !!(output.importtosource)
     }
 
     // fee_currency_id?: string;
@@ -534,6 +537,7 @@ export const createUnfundedCurrencyTransfer = (
         let flags = new BN(1);
         const version = new BN(1, 10);
   
+        if (params.importtosource) flags = flags.xor(RESERVE_TRANSFER_IMPORT_TO_SOURCE);
         if (params.via != null) flags = flags.xor(RESERVE_TRANSFER_RESERVE_TO_RESERVE);
         if (params.exportto != null) flags = flags.xor(RESERVE_TRANSFER_CROSS_SYSTEM);
         if (params.convertto != null) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
