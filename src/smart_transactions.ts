@@ -68,7 +68,7 @@ type OutputParams = {
   importtosource?: boolean
 }
 
-export const unpackOutput = (output: Output, systemId: string): { 
+export const unpackOutput = (output: Output, systemId: string, isInput: boolean = false): { 
   destinations: Array<string>, 
   values: { [currency: string]: BigNumber },
   fees: { [currency: string]: BigNumber },
@@ -85,7 +85,9 @@ export const unpackOutput = (output: Output, systemId: string): {
   let master: typeof OptCCParams;
   const params: Array<typeof OptCCParams> = [];
 
-  if (outputType === templates.types.P2PKH) {
+  if (outputType === templates.types.P2PK && isInput) {
+    values[systemId] = values[systemId].add(new BN(output.value));
+  } else if (outputType === templates.types.P2PKH) {
     const destAddr = toBase58Check(templates.pubKeyHash.output.decode(outputScript), 60)
 
     values[systemId] = values[systemId].add(new BN(output.value));
@@ -103,8 +105,10 @@ export const unpackOutput = (output: Output, systemId: string): {
     if (paramsOptCC.length > 1) throw new Error(">1 OptCCParam objects not currently supported for smart transaction params.")
 
     const processDestination = (destination: { destType: number, destinationBytes: Buffer }) => {
-      if (destination.destType !== 2 && destination.destType !== 4) {
-        throw new Error("Unsupported change destination type")
+      if (!(destination.destType === 1 && isInput) && 
+            destination.destType !== 2 && 
+            destination.destType !== 4) {
+        throw new Error("Unsupported destination type")
       }
 
       const destAddr = toBase58Check(
@@ -126,6 +130,13 @@ export const unpackOutput = (output: Output, systemId: string): {
         case evals.EVAL_NONE:
           if (ccparam.vData.length !== 0) {
             throw new Error(`Unexpected length of vdata array for eval code ${ccparam.evalCode}`)
+          }
+
+          ccvalues[systemId] = ccvalues[systemId].add(new BN(output.value));
+          break;
+        case evals.EVAL_STAKEGUARD:
+          if (!isInput) {
+            throw new Error(`Cannot create stakeguard output.`)
           }
 
           ccvalues[systemId] = ccvalues[systemId].add(new BN(output.value));
@@ -330,7 +341,7 @@ export const validateFundedCurrencyTransfer = (
     const _value = inputUtxo.satoshis
 
     try {
-      const inputInfo = unpackOutput({ value: _value, script: _script }, systemId)
+      const inputInfo = unpackOutput({ value: _value, script: _script }, systemId, true)
 
       for (const key in inputInfo.values) {
         if (amountsIn[key] == null) {

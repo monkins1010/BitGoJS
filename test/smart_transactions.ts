@@ -216,6 +216,106 @@ describe('smarttxs', function () {
     assert.deepStrictEqual(validation, { valid: false, message: 'Transaction has 0 inputs.' })
   })
 
+  it('can validate spend with coinbase input (mined)', function () {
+    const unfundedtx = "0400008085202f890001a842f60500000000ab1a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4c8c040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c7001a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c1008703a6ef9ea235635e328124ff3429db9f9e91b64e2d80c2280214002d3311c38bfd219092d2aef449804be8b3befe630692b119fd01e8da230698fad9bb65a3d2a8ec84d881e355c1c87dd84baa2e068dc3829e140d3c7500000000474201000000000000000000000000"
+    const fundedtx = '0400008085202f8901e566b94c6996d050404b9181a7679f5592fa662073a6c4465c04bfcc27028ff10000000000ffffffff024ec1e426000000001976a914002d3311c38bfd219092d2aef449804be8b3befe88aca842f60500000000ab1a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4c8c040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c7001a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c1008703a6ef9ea235635e328124ff3429db9f9e91b64e2d80c2280214002d3311c38bfd219092d2aef449804be8b3befe630692b119fd01e8da230698fad9bb65a3d2a8ec84d881e355c1c87dd84baa2e068dc3829e140d3c7500000000474201000000000000000000000000'
+    const changeaddr = "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx"
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const utxos = [{
+      "address":"R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx",
+      "blocktime":1687190901,
+      "height":81508,
+      "isspendable":1,
+      "outputIndex":0,
+      "satoshis":752560902,
+      "script":"210351c5d0d09554ecc25667259af393a723136e90782be07a6caea202fd22a35227ac",
+      "txid":"f18f0227ccbf045c46c4a6732066fa92559f67a781914b4050d096694cb966e5",
+      "currencyvalues": {},
+      "currencynames": {}
+    }]
+
+    const validation = validateFundedCurrencyTransfer(
+      system, 
+      fundedtx, 
+      unfundedtx, 
+      changeaddr, 
+      networks.verustest, 
+      utxos
+    )
+
+    assert.deepStrictEqual(validation, {    
+      change: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '652525902'
+      },
+      fees: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '35000'
+      },
+      in: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '752560902'
+      },
+      out: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '752550902'
+      },
+      sent: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000'
+      },
+      valid: true 
+    })
+  })
+
+  it('can validate spend with coinpase input (minted)', function () {
+    const unfundedtx = "0400008085202f89000100e1f5050000000024050403000000cc1b040300010115045653dfafa45298e7ffdbdbf8efeb3ab3b77f0a7175000000005c4201000000000000000000000000"
+    const fundedtx = '0400008085202f8901d91f59345c5b57d9bcfb1710ae2fadb6d18dcc71703960e36042786997a3e91a0000000000ffffffff020065cd1d0000000024050403000000cc1b040300010115045653dfafa45298e7ffdbdbf8efeb3ab3b77f0a717500e1f5050000000024050403000000cc1b040300010115045653dfafa45298e7ffdbdbf8efeb3ab3b77f0a7175000000005c4201000000000000000000000000'
+    const changeaddr = "iBLz2E4vjFh2TfjKvuHMS238uh5ZGoofWX"
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const utxos = [{
+      "addresses": [
+        "RCG8KwJNDVwpUBcdoa6AoHqHVJsA1uMYMR",
+        "iBLz2E4vjFh2TfjKvuHMS238uh5ZGoofWX"
+      ],
+      "address": "iBLz2E4vjFh2TfjKvuHMS238uh5ZGoofWX",
+      "txid": "1ae9a39769784260e360397071cc8dd1b6ad2fae1017fbbcd9575b5c34591fd9",
+      "outputIndex": 0,
+      "isspendable": 1,
+      "script": "3d040300010215045653dfafa45298e7ffdbdbf8efeb3ab3b77f0a712103166b7813a4855a88e9ef7340a692ef3c2decedfdc2c7563ec79537e89667d935cc4c87040301010115045653dfafa45298e7ffdbdbf8efeb3ab3b77f0a714301000017cb4abd8ac73ef13b936a2e00f15f60030d7d25b08b8120798e30bb67a2a3446b7cfdf7782a9bf1ba208554618ee40bfebb7b538482a71b26361e5bc6141dee2704030101012103166b7813a4855a88e9ef7340a692ef3c2decedfdc2c7563ec79537e89667d93575",
+      "currencyvalues": {
+        "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq": 6.00010000
+      },
+      "satoshis": 600010000,
+      "height": 82501,
+      "blocktime": 1687251984,
+      currencynames: {}
+    }]
+
+    const validation = validateFundedCurrencyTransfer(
+      system, 
+      fundedtx, 
+      unfundedtx, 
+      changeaddr, 
+      networks.verustest, 
+      utxos
+    )
+
+    assert.deepStrictEqual(validation, {    
+      change: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '500000000'
+      },
+      fees: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '10000'
+      },
+      in: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '600010000'
+      },
+      out: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '600000000'
+      },
+      sent: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000'
+      },
+      valid: true 
+    })
+  })
+
   it('fails on tx with too many outputs', function () {
     const unfundedtx = "0400008085202f89000100e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000"
     const fundedtx = '0400008085202f89016b0611ccc9f1f3e4572c02f984de1999726625b1c482ace67581def10253e9050100000000feffffff04d066e20b00000000781a040300010114f9ff43bb7debfcb57a19eeb6b67e68733edbba55cc4c59040309010114f9ff43bb7debfcb57a19eeb6b67e68733edbba553e86fefeff010275939018c507ed9cf366d309d4614b2e43ca3c0090603008db080000848374dd2a47335f0252c8caa066b94de4bf800f804a5d05000000007500e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788acd066e20b00000000781a040300010114f9ff43bb7debfcb57a19eeb6b67e68733edbba55cc4c59040309010114f9ff43bb7debfcb57a19eeb6b67e68733edbba553e86fefeff010275939018c507ed9cf366d309d4614b2e43ca3c0090603008db080000848374dd2a47335f0252c8caa066b94de4bf800f804a5d05000000007500e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000'

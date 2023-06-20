@@ -13,8 +13,9 @@ var OptCCParams = require('./optccparams');
 var templates = require('./templates');
 // Hack to force BigNumber to get typeof class instead of BN namespace
 var BNClass = new bn_js_1.BN(0);
-var unpackOutput = function (output, systemId) {
+var unpackOutput = function (output, systemId, isInput) {
     var _a, _b;
+    if (isInput === void 0) { isInput = false; }
     // Verify change output
     var outputScript = output.script;
     var outputType = templates.classifyOutput(outputScript);
@@ -23,7 +24,10 @@ var unpackOutput = function (output, systemId) {
     var destinations = [];
     var master;
     var params = [];
-    if (outputType === templates.types.P2PKH) {
+    if (outputType === templates.types.P2PK && isInput) {
+        values[systemId] = values[systemId].add(new bn_js_1.BN(output.value));
+    }
+    else if (outputType === templates.types.P2PKH) {
         var destAddr = verus_typescript_primitives_1.toBase58Check(templates.pubKeyHash.output.decode(outputScript), 60);
         values[systemId] = values[systemId].add(new bn_js_1.BN(output.value));
         destinations.push(destAddr);
@@ -41,8 +45,10 @@ var unpackOutput = function (output, systemId) {
         if (paramsOptCC.length > 1)
             throw new Error(">1 OptCCParam objects not currently supported for smart transaction params.");
         var processDestination = function (destination) {
-            if (destination.destType !== 2 && destination.destType !== 4) {
-                throw new Error("Unsupported change destination type");
+            if (!(destination.destType === 1 && isInput) &&
+                destination.destType !== 2 &&
+                destination.destType !== 4) {
+                throw new Error("Unsupported destination type");
             }
             var destAddr = verus_typescript_primitives_1.toBase58Check(destination.destinationBytes, destination.destType === 2 ? 60 : 102);
             if (!destinations.includes(destAddr)) {
@@ -58,6 +64,12 @@ var unpackOutput = function (output, systemId) {
                 case evals.EVAL_NONE:
                     if (ccparam.vData.length !== 0) {
                         throw new Error("Unexpected length of vdata array for eval code " + ccparam.evalCode);
+                    }
+                    ccvalues[systemId] = ccvalues[systemId].add(new bn_js_1.BN(output.value));
+                    break;
+                case evals.EVAL_STAKEGUARD:
+                    if (!isInput) {
+                        throw new Error("Cannot create stakeguard output.");
                     }
                     ccvalues[systemId] = ccvalues[systemId].add(new bn_js_1.BN(output.value));
                     break;
@@ -223,7 +235,7 @@ var validateFundedCurrencyTransfer = function (systemId, fundedTxHex, unfundedTx
         var _script = Buffer.from(inputUtxo.script, 'hex');
         var _value = inputUtxo.satoshis;
         try {
-            var inputInfo = exports.unpackOutput({ value: _value, script: _script }, systemId);
+            var inputInfo = exports.unpackOutput({ value: _value, script: _script }, systemId, true);
             for (var key in inputInfo.values) {
                 if (amountsIn[key] == null) {
                     amountsIn[key] = new bn_js_1.BN(inputInfo.values[key] != null ? inputInfo.values[key] : 0);
