@@ -3,9 +3,11 @@
  */
 /* global describe, it */
 import * as assert from 'assert';
-import { validateFundedCurrencyTransfer, createUnfundedCurrencyTransfer } from '../src/smart_transactions';
+import { validateFundedCurrencyTransfer, createUnfundedCurrencyTransfer, unpackOutput } from '../src/smart_transactions';
 import networks = require('../src/networks');
-import { DEST_PKH, FLAG_DEST_AUX, TransferDestination, fromBase58Check } from 'verus-typescript-primitives';
+import { DEST_PKH, FLAG_DEST_AUX, ReserveTransfer, TransferDestination, fromBase58Check } from 'verus-typescript-primitives';
+
+const Transaction = require('../src/transaction');
 
 describe.only('smarttxs', function () {
   it('validates successful token output to p2pkh', function () {
@@ -67,6 +69,86 @@ describe.only('smarttxs', function () {
         iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000',
         iECDGNNufPkSa9aHfbnQUjvhRN6YGR8eKM: '0',
         iFZC7A1HnnJGwBmoPjX3mG37RKbjZZLPhm: '0'
+      }
+    })
+  });
+
+  it('validates exportto from chain with bridge converter', function () {
+    const unfundedtx = "0400008085202f8900015512bc0100000000de1a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4cbf040308010114cb8a0f7f651b484a81e2312c3438deb601e273684ca301a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c10001cd51509db53e822df7eed11cac11e7b729e22400809b2ac214002d3311c38bfd219092d2aef449804be8b3befea6ef9ea235635e328124ff3429db9f9e91b64e2d00000000000000000000000000000000000000002bc4bb010000000001160214002d3311c38bfd219092d2aef449804be8b3befe65ffba3d69510d6f31845e60b9ee0c275389f84f75000000004b6a01000000000000000000000000"
+    const fundedtx = "0400008085202f89025c9a994a55caf97f48ef16b66a5a7125e2d26944a2d85a8775dca09b7131500b0500000000fffffffffb1497f51b15c4520e0b8bcd86123101c8e22253e460b50d89aa21a0aeac014a0500000000ffffffff0272976b46000000001976a914002d3311c38bfd219092d2aef449804be8b3befe88ac5512bc0100000000de1a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4cbf040308010114cb8a0f7f651b484a81e2312c3438deb601e273684ca301a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c10001cd51509db53e822df7eed11cac11e7b729e22400809b2ac214002d3311c38bfd219092d2aef449804be8b3befea6ef9ea235635e328124ff3429db9f9e91b64e2d00000000000000000000000000000000000000002bc4bb010000000001160214002d3311c38bfd219092d2aef449804be8b3befe65ffba3d69510d6f31845e60b9ee0c275389f84f75000000004b6a01000000000000000000000000"
+    const changeaddr = "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx"
+    const system = "iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu"
+    const utxos = [
+      {
+        "address": "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx",
+        "blocktime": 1688044160,
+        "currencyvalues": {
+            "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq": 1.0
+        },
+        "height": 92481,
+        "isspendable": 1,
+        "outputIndex": 5,
+        "satoshis": 0,
+        "script": "1a040300010114002d3311c38bfd219092d2aef449804be8b3befecc34040309010114002d3311c38bfd219092d2aef449804be8b3befe1901a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c10075",
+        "txid": "0b5031719ba0dc75875ad8a24469d2e225715a6ab616ef487ff9ca554a999a5c",
+        "currencynames": {}
+      },
+      {
+        "address": "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx",
+        "blocktime": 1688045030,
+        "height": 92501,
+        "isspendable": 1,
+        "outputIndex": 5,
+        "satoshis": 1210568919,
+        "script": "76a914002d3311c38bfd219092d2aef449804be8b3befe88ac",
+        "txid": "4a01acaea021aa890db560e45322e2c801311286cd8b0b0e52c4151bf59714fb",
+        "currencynames": {},
+        "currencyvalues": {},
+      }
+    ]
+
+    const validation = validateFundedCurrencyTransfer(
+      system, 
+      fundedtx, 
+      unfundedtx, 
+      changeaddr, 
+      networks.verustest, 
+      utxos
+    )
+
+    const unfundedTxObj = Transaction.fromHex(unfundedtx, networks.verus);
+
+    const outputInfo = unpackOutput(unfundedTxObj.outs[0], system);
+
+    const transDest = (outputInfo.params[0].data as ReserveTransfer)
+
+    assert.strictEqual(transDest.transfer_destination.isGateway(), true);
+    assert.strictEqual(transDest.transfer_destination.hasAuxDests(), true);
+    assert.strictEqual(transDest.transfer_destination.getAddressString(), "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx");
+    assert.strictEqual(transDest.transfer_destination.gateway_id, "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq");
+    assert.strictEqual(transDest.transfer_destination.gateway_code, "i3UXS5QPRQGNRDDqVnyWTnmFCTHDbzmsYk");
+
+    assert.strictEqual(transDest.transfer_destination.aux_dests[0].isGateway(), false);
+    assert.strictEqual(transDest.transfer_destination.aux_dests[0].getAddressString(), "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx");
+
+    assert.deepStrictEqual(validation, {
+      valid: true,
+      in: {
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '1210568919',
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000'
+      },
+      out: {
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '1210558919',
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000'
+      },
+      change: { iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '1181456242' },
+      fees: {
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '29112677',
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '0'
+      },
+      sent: {
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '0',
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000'
       }
     })
   });
