@@ -395,7 +395,8 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
             burnweight: !!(output.burnweight),
             burn: !!(output.burn),
             mintnew: !!(output.mintnew),
-            importtosource: !!(output.importtosource)
+            importtosource: !!(output.importtosource),
+            bridgeid: output.bridgeid
         };
         // fee_currency_id?: string;
         // fee_amount?: BigNumber;
@@ -427,13 +428,14 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
                 outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
                 var flags = new bn_js_1.BN(1);
                 var version_1 = new bn_js_1.BN(1, 10);
+                var isConversion = params.convertto != null && params.convertto !== params.currency;
                 if (params.importtosource)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_IMPORT_TO_SOURCE);
                 if (params.via != null)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_RESERVE_TO_RESERVE);
                 if (params.exportto != null)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CROSS_SYSTEM);
-                if (params.convertto != null)
+                if (isConversion)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_CONVERT);
                 if (params.preconvert)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_PRECONVERT);
@@ -443,6 +445,10 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_PRICE);
                 if (params.burnweight)
                     flags = flags.xor(verus_typescript_primitives_1.RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
+                var ignoreBridgeId = (isConversion || params.exportto == null);
+                if (!ignoreBridgeId && params.bridgeid == null) {
+                    throw new Error("Bridge ID required");
+                }
                 var resTransfer = new verus_typescript_primitives_1.ReserveTransfer({
                     values: values,
                     version: version_1,
@@ -450,7 +456,9 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
                     fee_currency_id: params.feecurrency,
                     fee_amount: new bn_js_1.BN(params.feesatoshis, 10),
                     transfer_destination: params.address,
-                    dest_currency_id: output.via ? output.via : params.convertto,
+                    dest_currency_id: output.via ? output.via
+                        :
+                            (isConversion || params.exportto == null) ? params.convertto : params.bridgeid,
                     second_reserve_id: params.convertto,
                     dest_system_id: params.exportto
                 });

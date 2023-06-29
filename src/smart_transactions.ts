@@ -58,14 +58,15 @@ type OutputParams = {
   exportto?: string, // i-address of system to export to
   feecurrency?: string, // i-address of fee currency
   via?: string, // i-address of currency to convert via,
-  feesatoshis?: string, // Satoshi satoshis of output fee
+  feesatoshis?: string, // satoshis of output fee
   address: TransferDestination,
   refundto?: TransferDestination,
   preconvert?: boolean,
   burn?: boolean,
   burnweight?: boolean,
   mintnew?: boolean,
-  importtosource?: boolean
+  importtosource?: boolean,
+  bridgeid?: string // if currency is exportto without conversion, destination currency needs to be the bridge
 }
 
 export const unpackOutput = (output: Output, systemId: string, isInput: boolean = false): { 
@@ -511,7 +512,8 @@ export const createUnfundedCurrencyTransfer = (
       burnweight: !!(output.burnweight),
       burn: !!(output.burn),
       mintnew: !!(output.mintnew),
-      importtosource: !!(output.importtosource)
+      importtosource: !!(output.importtosource),
+      bridgeid: output.bridgeid
     }
 
     // fee_currency_id?: string;
@@ -547,15 +549,22 @@ export const createUnfundedCurrencyTransfer = (
         outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
         let flags = new BN(1);
         const version = new BN(1, 10);
+        const isConversion = params.convertto != null && params.convertto !== params.currency;
   
         if (params.importtosource) flags = flags.xor(RESERVE_TRANSFER_IMPORT_TO_SOURCE);
         if (params.via != null) flags = flags.xor(RESERVE_TRANSFER_RESERVE_TO_RESERVE);
         if (params.exportto != null) flags = flags.xor(RESERVE_TRANSFER_CROSS_SYSTEM);
-        if (params.convertto != null) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
+        if (isConversion) flags = flags.xor(RESERVE_TRANSFER_CONVERT);
         if (params.preconvert) flags = flags.xor(RESERVE_TRANSFER_PRECONVERT);
         if (params.mintnew) flags = flags.xor(RESERVE_TRANSFER_MINT_CURRENCY);
         if (params.burn) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_PRICE);
         if (params.burnweight) flags = flags.xor(RESERVE_TRANSFER_BURN_CHANGE_WEIGHT);
+
+        const ignoreBridgeId = (isConversion || params.exportto == null);
+
+        if (!ignoreBridgeId && params.bridgeid == null) {
+          throw new Error("Bridge ID required")
+        }
   
         const resTransfer = new ReserveTransfer({
           values,
@@ -564,7 +573,9 @@ export const createUnfundedCurrencyTransfer = (
           fee_currency_id: params.feecurrency,
           fee_amount: new BN(params.feesatoshis, 10),
           transfer_destination: params.address,
-          dest_currency_id: output.via ? output.via : params.convertto,
+          dest_currency_id: output.via ? output.via 
+                                          : 
+                                         (isConversion || params.exportto == null) ? params.convertto : params.bridgeid,
           second_reserve_id: params.convertto,
           dest_system_id: params.exportto
         })

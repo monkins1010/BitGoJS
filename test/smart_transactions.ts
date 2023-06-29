@@ -7,7 +7,7 @@ import { validateFundedCurrencyTransfer, createUnfundedCurrencyTransfer } from '
 import networks = require('../src/networks');
 import { DEST_PKH, FLAG_DEST_AUX, TransferDestination, fromBase58Check } from 'verus-typescript-primitives';
 
-describe('smarttxs', function () {
+describe.only('smarttxs', function () {
   it('validates successful token output to p2pkh', function () {
     const unfundedtx = "0400008085202f89000100e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000"
     const fundedtx = "0400008085202f89016b0611ccc9f1f3e4572c02f984de1999726625b1c482ace67581def10253e9050100000000feffffff02d066e20b00000000781a040300010114402f01e78edb0f5c8251658dde07f0d52b12e972cc4c59040309010114402f01e78edb0f5c8251658dde07f0d52b12e9723e86fefeff010275939018c507ed9cf366d309d4614b2e43ca3c0090603008db080000848374dd2a47335f0252c8caa066b94de4bf800f804a5d05000000007500e1f505000000001976a91487bcb238974658d8bda6a19f9d3f2dd04339b8f788ac00000000f2aa00000000000000000000000000"
@@ -791,6 +791,42 @@ describe('smarttxs', function () {
     )
 
     assert.equal(unfundedTransfer, "0400008085202f890001e093040000000000c31a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca4040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c880154852c4e9fb1d4c4291fc093e41ce2c7befa4076aed6c1008b03a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e972325aa0d080ddfdef2d50028cfeb07a834d42bf55a6ef9ea235635e328124ff3429db9f9e91b64e2d7500000000701101000000000000000000000000")
+  })
+
+  it('creates unfunded export with no conversion', function () {
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const destbytes = fromBase58Check("RF8ZdvjvGMNdtu3jNwcmaTDeU8hFJ28ajN").hash
+
+    const unfundedTransfer = createUnfundedCurrencyTransfer(
+      system,
+      [{
+        currency: "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq",
+        satoshis: "100000000",
+        feecurrency: system,
+        address: new TransferDestination({
+          type: DEST_PKH.xor(FLAG_DEST_AUX),
+          destination_bytes: destbytes,
+          aux_dests: [
+            new TransferDestination({
+              type: DEST_PKH,
+              destination_bytes: destbytes
+            })
+          ]
+        }),
+        exportto: "iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu",
+        preconvert: false,
+        burn: false,
+        burnweight: false,
+        mintnew: false,
+        bridgeid: "iCmr2i7wECJzuGisQeUFQJJCASW66Jp7QG"
+      }],
+      networks.verustest,
+      70000,
+      4,
+      0x892f2085
+    )
+
+    assert.equal(unfundedTransfer, "0400008085202f890001e074fa0500000000c21a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca3040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c8701a6ef9ea235635e328124ff3429db9f9e91b64e2daed6c10041a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e97265ffba3d69510d6f31845e60b9ee0c275389f84fcd51509db53e822df7eed11cac11e7b729e224007500000000701101000000000000000000000000")
   })
 
   it('creates unfunded PKH tx', function () {
