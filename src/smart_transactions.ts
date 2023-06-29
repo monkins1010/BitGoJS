@@ -11,7 +11,9 @@ import { CurrencyValueMap,
   TokenOutput, 
   TransferDestination, 
   toBase58Check, 
-  RESERVE_TRANSFER_DESTINATION 
+  RESERVE_TRANSFER_DESTINATION,
+  Identity,
+  Principal,
 } from "verus-typescript-primitives";
 import { BN } from "bn.js";
 import { Network } from "./networkTypes";
@@ -599,3 +601,64 @@ export const getFundedTxBuilder = (
 
   return txb;
 }
+
+//create unfunded identity update transaction
+export const createUnfundedIdentityUpdate = (
+    systemId: string,
+    identity: Identity,
+    outputs: Array<OutputParams>,
+    network: Network,
+    expiryHeight: number = 0,
+    version: number = 4,
+    versionGroupId: number = 0x892f2085
+  ): string => {
+    const txb = new TransactionBuilder(network);
+  
+    txb.setVersion(version);
+    txb.setExpiryHeight(expiryHeight);
+    txb.setVersionGroupId(versionGroupId);
+
+    //TODO: iterate through outputs and add output scripts to tx. not sure if identity needs to be part of outputs param or a separate param.
+    //TODO: add identity to output scripts
+    //TODO: change eval codes
+    for (const output of outputs) {
+        if (!output.currency) throw new Error("Must specify currency i-address for all outputs");
+        if (output.satoshis == null) throw new Error("Must specify satoshis for all outputs");
+        if (output.address == null) throw new Error("Must specify address for all outputs");
+        
+        const params: OutputParams = {
+          currency: output.currency,
+          satoshis: output.satoshis,
+          convertto: output.convertto ? output.convertto : output.currency,
+          exportto: output.exportto,
+          feecurrency: output.feecurrency ? output.feecurrency : systemId,
+          feesatoshis: output.feesatoshis ? output.feesatoshis : "300000",
+          via: output.via,
+          address: output.address,
+          refundto: output.refundto,
+          preconvert: !!(output.preconvert),
+          burnweight: !!(output.burnweight),
+          burn: !!(output.burn),
+          mintnew: !!(output.mintnew)
+        }
+
+        let outMaster;
+        let outParams;
+
+        const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
+        outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+        outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination]); //change eval code
+
+        const outputScript = script.compile([
+        outMaster.toChunk(),
+        opcodes.OP_CHECKCRYPTOCONDITION,
+        outParams.toChunk(),
+        opcodes.OP_DROP,
+        ]);
+
+        txb.addOutput(outputScript, nativeValue.toNumber());
+    }
+  
+    return txb.buildIncomplete().toHex();
+  }
+  
