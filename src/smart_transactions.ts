@@ -642,6 +642,8 @@ export const createUnfundedIdentityUpdate = (
           mintnew: !!(output.mintnew)
         }
 
+        const satoshis = new BN(params.satoshis, 10)
+
         let outMaster;
         let outParams;
 
@@ -656,7 +658,7 @@ export const createUnfundedIdentityUpdate = (
         opcodes.OP_DROP,
         ]);
 
-        txb.addOutput(outputScript, nativeValue.toNumber());
+        txb.addOutput(outputScript, satoshis.toNumber());
     }
   
     return txb.buildIncomplete().toHex();
