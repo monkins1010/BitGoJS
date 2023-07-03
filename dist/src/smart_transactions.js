@@ -79,6 +79,16 @@ var unpackOutput = function (output, systemId, isInput) {
                     }
                     var resTransfer = new verus_typescript_primitives_1.ReserveTransfer();
                     resTransfer.fromBuffer(ccparam.vData[0]);
+                    var aux_dest = void 0;
+                    if (resTransfer.transfer_destination.aux_dests.length > 1) {
+                        throw new Error(">1 aux destination not supported");
+                    }
+                    else if (resTransfer.transfer_destination.aux_dests.length > 0) {
+                        aux_dest = resTransfer.transfer_destination.aux_dests[0];
+                        if (aux_dest.hasAuxDests()) {
+                            throw new Error("Nested aux destinations not supported");
+                        }
+                    }
                     ccvalues[systemId] = ccvalues[systemId].add(new bn_js_1.BN(output.value));
                     resTransfer.reserve_values.value_map.forEach(function (value, key) {
                         if (key !== systemId) {
@@ -92,6 +102,12 @@ var unpackOutput = function (output, systemId, isInput) {
                     var fee = resTransfer.fee_amount;
                     var feecurrency = resTransfer.fee_currency_id;
                     ccfees[feecurrency] = fee;
+                    if (resTransfer.transfer_destination.fees != null) {
+                        ccfees[feecurrency] = ccfees[feecurrency].add(resTransfer.transfer_destination.fees);
+                    }
+                    if (aux_dest != null && aux_dest.fees != null) {
+                        ccfees[feecurrency] = ccfees[feecurrency].add(aux_dest.fees);
+                    }
                     break;
                 case evals.EVAL_RESERVE_OUTPUT:
                     if (ccparam.vData.length !== 1) {
