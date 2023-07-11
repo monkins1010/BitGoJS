@@ -150,18 +150,6 @@ export const unpackOutput = (output: Output, systemId: string, isInput: boolean 
           const resTransfer = new ReserveTransfer();
           resTransfer.fromBuffer(ccparam.vData[0]);
 
-          let aux_dest: TransferDestination;
-
-          if (resTransfer.transfer_destination.aux_dests.length > 1) {
-            throw new Error(">1 aux destination not supported");
-          } else if (resTransfer.transfer_destination.aux_dests.length > 0) {
-            aux_dest = resTransfer.transfer_destination.aux_dests[0];
-
-            if (aux_dest.hasAuxDests()) {
-              throw new Error("Nested aux destinations not supported");
-            }
-          }
-
           ccvalues[systemId] = ccvalues[systemId].add(new BN(output.value));
           resTransfer.reserve_values.value_map.forEach((value, key) => {
             if (key !== systemId) {
@@ -180,8 +168,19 @@ export const unpackOutput = (output: Output, systemId: string, isInput: boolean 
             ccfees[feecurrency] = ccfees[feecurrency].add(resTransfer.transfer_destination.fees)
           }
 
-          if (aux_dest != null && aux_dest.fees != null) {
-            ccfees[feecurrency] = ccfees[feecurrency].add(aux_dest.fees)
+          for (const aux_dest of resTransfer.transfer_destination.aux_dests) {
+            if (aux_dest.hasAuxDests()) {
+              throw new Error("Nested aux destinations not supported");
+            }
+
+            if (aux_dest.fees != null) {
+              ccfees[feecurrency] = ccfees[feecurrency].add(aux_dest.fees);
+            }
+
+            processDestination({ 
+              destType: aux_dest.typeNoFlags().toNumber(), 
+              destinationBytes: aux_dest.destination_bytes 
+            })
           }
 
           break;

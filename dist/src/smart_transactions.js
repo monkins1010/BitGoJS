@@ -44,7 +44,7 @@ var unpackOutput = function (output, systemId, isInput) {
         }
         if (paramsOptCC.length > 1)
             throw new Error(">1 OptCCParam objects not currently supported for smart transaction params.");
-        var processDestination = function (destination) {
+        var processDestination_1 = function (destination) {
             if (!(destination.destType === 1 && isInput) &&
                 destination.destType !== 2 &&
                 destination.destType !== 4) {
@@ -79,16 +79,6 @@ var unpackOutput = function (output, systemId, isInput) {
                     }
                     var resTransfer = new verus_typescript_primitives_1.ReserveTransfer();
                     resTransfer.fromBuffer(ccparam.vData[0]);
-                    var aux_dest = void 0;
-                    if (resTransfer.transfer_destination.aux_dests.length > 1) {
-                        throw new Error(">1 aux destination not supported");
-                    }
-                    else if (resTransfer.transfer_destination.aux_dests.length > 0) {
-                        aux_dest = resTransfer.transfer_destination.aux_dests[0];
-                        if (aux_dest.hasAuxDests()) {
-                            throw new Error("Nested aux destinations not supported");
-                        }
-                    }
                     ccvalues[systemId] = ccvalues[systemId].add(new bn_js_1.BN(output.value));
                     resTransfer.reserve_values.value_map.forEach(function (value, key) {
                         if (key !== systemId) {
@@ -105,8 +95,18 @@ var unpackOutput = function (output, systemId, isInput) {
                     if (resTransfer.transfer_destination.fees != null) {
                         ccfees[feecurrency] = ccfees[feecurrency].add(resTransfer.transfer_destination.fees);
                     }
-                    if (aux_dest != null && aux_dest.fees != null) {
-                        ccfees[feecurrency] = ccfees[feecurrency].add(aux_dest.fees);
+                    for (var _i = 0, _c = resTransfer.transfer_destination.aux_dests; _i < _c.length; _i++) {
+                        var aux_dest = _c[_i];
+                        if (aux_dest.hasAuxDests()) {
+                            throw new Error("Nested aux destinations not supported");
+                        }
+                        if (aux_dest.fees != null) {
+                            ccfees[feecurrency] = ccfees[feecurrency].add(aux_dest.fees);
+                        }
+                        processDestination_1({
+                            destType: aux_dest.typeNoFlags().toNumber(),
+                            destinationBytes: aux_dest.destination_bytes
+                        });
                     }
                     break;
                 case evals.EVAL_RESERVE_OUTPUT:
@@ -142,7 +142,7 @@ var unpackOutput = function (output, systemId, isInput) {
         master = processOptCCParam(masterOptCC);
         for (var _i = 0, _c = masterOptCC.destinations; _i < _c.length; _i++) {
             var destination = _c[_i];
-            processDestination(destination);
+            processDestination_1(destination);
         }
         for (var _d = 0, paramsOptCC_1 = paramsOptCC; _d < paramsOptCC_1.length; _d++) {
             var paramsCc = paramsOptCC_1[_d];
@@ -164,7 +164,7 @@ var unpackOutput = function (output, systemId, isInput) {
             }
             for (var _e = 0, _f = paramsCc.destinations; _e < _f.length; _e++) {
                 var destination = _f[_e];
-                processDestination(destination);
+                processDestination_1(destination);
             }
         }
     }
