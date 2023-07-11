@@ -5,7 +5,7 @@
 import * as assert from 'assert';
 import { validateFundedCurrencyTransfer, createUnfundedCurrencyTransfer, unpackOutput } from '../src/smart_transactions';
 import networks = require('../src/networks');
-import { DEST_PKH, FLAG_DEST_AUX, ReserveTransfer, TransferDestination, fromBase58Check } from 'verus-typescript-primitives';
+import { DEST_ID, DEST_PKH, FLAG_DEST_AUX, ReserveTransfer, TransferDestination, fromBase58Check } from 'verus-typescript-primitives';
 
 const Transaction = require('../src/transaction');
 
@@ -873,6 +873,89 @@ describe.only('smarttxs', function () {
     )
 
     assert.equal(unfundedTransfer, "0400008085202f890001e093040000000000c31a040300010114cb8a0f7f651b484a81e2312c3438deb601e27368cc4ca4040308010114cb8a0f7f651b484a81e2312c3438deb601e273684c880154852c4e9fb1d4c4291fc093e41ce2c7befa4076aed6c1008b03a6ef9ea235635e328124ff3429db9f9e91b64e2d91a6604214402f01e78edb0f5c8251658dde07f0d52b12e97201160214402f01e78edb0f5c8251658dde07f0d52b12e972325aa0d080ddfdef2d50028cfeb07a834d42bf55a6ef9ea235635e328124ff3429db9f9e91b64e2d7500000000701101000000000000000000000000")
+  })
+
+  it('creates unfunded eval_none', function () {
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const destbytes = fromBase58Check("i6gN8cLxYpFyquahzBco6cNNuNacj9c8SR").hash
+
+    const unfundedTransfer = createUnfundedCurrencyTransfer(
+      system,
+      [{
+        currency: "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq",
+        satoshis: "100000000",
+        address: new TransferDestination({
+          type: DEST_ID,
+          destination_bytes: destbytes,
+        }),
+        preconvert: false,
+        burn: false,
+        burnweight: false,
+        mintnew: false,
+        importtosource: false
+      }],
+      networks.verustest,
+      111759,
+      4,
+      0x892f2085
+    )
+
+    assert.equal(unfundedTransfer, "0400008085202f89000100e1f5050000000024050403000000cc1b0403000101150423259accb5fb1ab856e539e76eccbacc2452b41875000000008fb401000000000000000000000000")
+  })
+
+  it('can validate spend with coinbase input (mined)', function () {
+    const unfundedtx = "0400008085202f89000100e1f5050000000024050403000000cc1b0403000101150423259accb5fb1ab856e539e76eccbacc2452b41875000000008fb401000000000000000000000000"
+    const fundedtx = '0400008085202f8901b55c45e85efeb615ed84235740a96739ff9b9703df1ee8f3b972237a314b59e30000000000ffffffff02b0f20a0900000000531a040300010114002d3311c38bfd219092d2aef449804be8b3befecc35040309010114002d3311c38bfd219092d2aef449804be8b3befe1a01cd51509db53e822df7eed11cac11e7b729e2240080bdd6f9607500e1f5050000000024050403000000cc1b0403000101150423259accb5fb1ab856e539e76eccbacc2452b41875000000008fb401000000000000000000000000'
+    const changeaddr = "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx"
+    const system = "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq"
+    const utxos = [{
+      "address": "R9J8E2no2HVjQmzX6Ntes2ShSGcn7WiRcx",
+      "blocktime": 1688908700,
+      "currencyvalues": {
+          "iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq": 2.51722432,
+          "iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu": 3.999
+      },
+      "height": 109217,
+      "isspendable": 1,
+      "outputIndex": 0,
+      "satoshis": 251722432,
+      "script": "1a040300010114002d3311c38bfd219092d2aef449804be8b3befecc35040309010114002d3311c38bfd219092d2aef449804be8b3befe1a01cd51509db53e822df7eed11cac11e7b729e2240080bdd6f96075",
+      "txid": "e3594b317a2372b9f3e81edf03979bff3967a940572384ed15b6fe5ee8455cb5",
+      "currencynames": {}
+    }]
+
+    const validation = validateFundedCurrencyTransfer(
+      system, 
+      fundedtx, 
+      unfundedtx, 
+      changeaddr, 
+      networks.verustest, 
+      utxos
+    )
+
+    assert.deepStrictEqual(validation, {
+      valid: true,
+      in: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '251722432',
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '399900000'
+      },
+      out: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '251712432',
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '399900000'
+      },
+      change: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '151712432',
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '399900000'
+      },
+      fees: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '10000',
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '0'
+      },
+      sent: {
+        iJhCezBExJHvtyH3fGhNnt2NhU4Ztkf2yq: '100000000',
+        iNC9NG5Jqk2tqVtqfjfiSpaqxrXaFU6RDu: '0'
+      }
+    })
   })
 
   it('creates unfunded export with no conversion', function () {

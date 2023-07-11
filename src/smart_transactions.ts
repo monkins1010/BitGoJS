@@ -549,11 +549,13 @@ export const createUnfundedCurrencyTransfer = (
                               output.exportto != null ||
                               output.via != null;
     
-    const satoshis = new BN(params.satoshis, 10)
+    const satoshis = new BN(params.satoshis, 10);
+
     const values = new CurrencyValueMap({
       value_map: new Map([[params.currency, satoshis]]),
       multivalue: false
-    })
+    });
+
     const nativeFeeValue = params.feecurrency === systemId && isReserveTransfer ? new BN(params.feesatoshis) : new BN(0);
     const nativeValue = params.currency === systemId ? satoshis.add(nativeFeeValue) : nativeFeeValue;
     const isPKH = !isReserveTransfer && params.currency === systemId && params.address.type === DEST_PKH;
@@ -602,18 +604,28 @@ export const createUnfundedCurrencyTransfer = (
   
         outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
       } else {
-        const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
+        values.value_map.delete(systemId);
+
+        if (values.value_map.size == 0) {
+          const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
   
-        // Assume token output
-        outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-        const version = new BN(1, 10);
+          // Assume token output
+          outMaster = new OptCCParams(3, evals.EVAL_NONE, 0, 0, []);
+          outParams = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination], []);
+        } else {
+          const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
   
-        const tokenOutput = new TokenOutput({
-          values,
-          version
-        })
-  
-        outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+          // Assume token output
+          outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+          const version = new BN(1, 10);
+    
+          const tokenOutput = new TokenOutput({
+            values,
+            version
+          })
+    
+          outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+        }
       }
   
       const outputScript = script.compile([

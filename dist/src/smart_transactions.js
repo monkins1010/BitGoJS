@@ -481,15 +481,24 @@ var createUnfundedCurrencyTransfer = function (systemId, outputs, network, expir
                 outParams = new OptCCParams(3, evals.EVAL_RESERVE_TRANSFER, 1, 1, [destination], [resTransfer.toBuffer()]);
             }
             else {
-                var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
-                // Assume token output
-                outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-                var version_2 = new bn_js_1.BN(1, 10);
-                var tokenOutput = new verus_typescript_primitives_1.TokenOutput({
-                    values: values,
-                    version: version_2
-                });
-                outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+                values.value_map["delete"](systemId);
+                if (values.value_map.size == 0) {
+                    var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
+                    // Assume token output
+                    outMaster = new OptCCParams(3, evals.EVAL_NONE, 0, 0, []);
+                    outParams = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination], []);
+                }
+                else {
+                    var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
+                    // Assume token output
+                    outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+                    var version_2 = new bn_js_1.BN(1, 10);
+                    var tokenOutput = new verus_typescript_primitives_1.TokenOutput({
+                        values: values,
+                        version: version_2
+                    });
+                    outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination], [tokenOutput.toBuffer()]);
+                }
             }
             var outputScript = script.compile([
                 outMaster.toChunk(),
