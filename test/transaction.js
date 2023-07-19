@@ -53,6 +53,12 @@ describe('Transaction', function () {
 
     var actual = Transaction.fromHex(data, NETWORKS.verustest);
     var script = actual.outs[0].script;
+    var btemplates = require('../src/templates')
+
+    const output = btemplates.classifyOutput(script)
+    assert.strictEqual(output, btemplates.types.SMART_TRANSACTION);
+    const SmartTransactionSignatures = require('../src/templates/smarttransaction/output')
+    const decoded = SmartTransactionSignatures.check(script);
     console.log(actual)
   })
 
