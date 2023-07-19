@@ -454,6 +454,11 @@ bech32@0.0.3:
   resolved "https://registry.yarnpkg.com/bech32/-/bech32-0.0.3.tgz#736747c4a6531c5d8937d0400498de30e93b2f9c"
   integrity sha512-O+K1w8P/aAOLcYwwQ4sbiPYZ51ZIW95lnS4/6nE8Aib/z+OOddQIIPdu2qi94qGDp4HhYy/wJotttXKkak1lXg==
 
+bech32@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/bech32/-/bech32-2.0.0.tgz#078d3686535075c8c79709f054b1b226a133b355"
+  integrity sha512-LcknSilhIGatDAsY1ak2I8VtGaHNhgMSYVxFrGLXv+xLHytaKZKcaUJJUE7qmBr7h33o5YQwP55pMI0xmkpJwg==
+
 bigi@1.4.0:
   version "1.4.0"
   resolved "https://registry.yarnpkg.com/bigi/-/bigi-1.4.0.tgz#90ac1aeac0a531216463bdb58f42c1e05c8407ac"
@@ -2794,6 +2799,11 @@ secp256k1@3.5.2:
     nan "^2.2.1"
     safe-buffer "^5.1.0"
 
+semaphore-async-await@^1.5.1:
+  version "1.5.1"
+  resolved "https://registry.yarnpkg.com/semaphore-async-await/-/semaphore-async-await-1.5.1.tgz#857bef5e3644601ca4b9570b87e9df5ca12974fa"
+  integrity sha512-b/ptP11hETwYWpeilHXXQiV5UJNJl7ZWWooKRE5eBIYWoom6dZ0SluCIdCtKycsMtZgKWE01/qAw6jblw1YVhg==
+
 semver@^6.0.0, semver@^6.3.0:
   version "6.3.0"
   resolved "https://registry.yarnpkg.com/semver/-/semver-6.3.0.tgz#ee0a64c8af5e8ceea67687b133761e1becbd1d3d"
@@ -3226,14 +3236,16 @@ varuint-bitcoin@1.0.4:
   resolved "https://registry.yarnpkg.com/varuint-bitcoin/-/varuint-bitcoin-1.0.4.tgz#d812c5dae16e32f60544b6adee1d4be1307d0283"
   integrity sha1-2BLF2uFuMvYFRLat7h1L4TB9AoM=
 
-"verus-typescript-primitives@https://github.com/VerusCoin/verus-typescript-primitives.git":
+verus-typescript-primitives@../verus-typescript-primitives:
   version "1.0.0"
   resolved "https://github.com/VerusCoin/verus-typescript-primitives.git#17f64fa1d152f5b23e3e8ec12b7f8206d382d0c1"
   dependencies:
     base64url "3.0.1"
+    bech32 "^2.0.0"
     bn.js "5.2.1"
     bs58check "https://github.com/bitcoinjs/bs58check"
     create-hash "1.2.0"
+    semaphore-async-await "^1.5.1"
 
 which-boxed-primitive@^1.0.2:
   version "1.0.2"
