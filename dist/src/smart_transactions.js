@@ -1,6 +1,6 @@
 "use strict";
 exports.__esModule = true;
-exports.getFundedTxBuilder = exports.createUnfundedCurrencyTransfer = exports.validateFundedCurrencyTransfer = exports.unpackOutput = void 0;
+exports.createUnfundedIdentityUpdate = exports.getFundedTxBuilder = exports.createUnfundedCurrencyTransfer = exports.validateFundedCurrencyTransfer = exports.unpackOutput = void 0;
 var verus_typescript_primitives_1 = require("verus-typescript-primitives");
 var bn_js_1 = require("bn.js");
 var Transaction = require('./transaction.js');
@@ -527,3 +527,55 @@ var getFundedTxBuilder = function (fundedTxHex, network, prevOutScripts) {
     return txb;
 };
 exports.getFundedTxBuilder = getFundedTxBuilder;
+//create unfunded identity update transaction
+var createUnfundedIdentityUpdate = function (systemId, identity, outputs, network, expiryHeight, version, versionGroupId) {
+    if (expiryHeight === void 0) { expiryHeight = 0; }
+    if (version === void 0) { version = 4; }
+    if (versionGroupId === void 0) { versionGroupId = 0x892f2085; }
+    var txb = new TransactionBuilder(network);
+    txb.setVersion(version);
+    txb.setExpiryHeight(expiryHeight);
+    txb.setVersionGroupId(versionGroupId);
+    //TODO: iterate through outputs and add output scripts to tx. not sure if identity needs to be part of outputs param or a separate param.
+    //TODO: add identity to output scripts
+    //TODO: change eval codes
+    for (var _i = 0, outputs_2 = outputs; _i < outputs_2.length; _i++) {
+        var output = outputs_2[_i];
+        if (!output.currency)
+            throw new Error("Must specify currency i-address for all outputs");
+        if (output.satoshis == null)
+            throw new Error("Must specify satoshis for all outputs");
+        if (output.address == null)
+            throw new Error("Must specify address for all outputs");
+        var params = {
+            currency: output.currency,
+            satoshis: output.satoshis,
+            convertto: output.convertto ? output.convertto : output.currency,
+            exportto: output.exportto,
+            feecurrency: output.feecurrency ? output.feecurrency : systemId,
+            feesatoshis: output.feesatoshis ? output.feesatoshis : "300000",
+            via: output.via,
+            address: output.address,
+            refundto: output.refundto,
+            preconvert: !!(output.preconvert),
+            burnweight: !!(output.burnweight),
+            burn: !!(output.burn),
+            mintnew: !!(output.mintnew)
+        };
+        var satoshis = new bn_js_1.BN(params.satoshis, 10);
+        var outMaster = void 0;
+        var outParams = void 0;
+        var destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes);
+        outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
+        outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination]); //change eval code
+        var outputScript = script.compile([
+            outMaster.toChunk(),
+            opcodes.OP_CHECKCRYPTOCONDITION,
+            outParams.toChunk(),
+            opcodes.OP_DROP,
+        ]);
+        txb.addOutput(outputScript, satoshis.toNumber());
+    }
+    return txb.buildIncomplete().toHex();
+};
+exports.createUnfundedIdentityUpdate = createUnfundedIdentityUpdate;

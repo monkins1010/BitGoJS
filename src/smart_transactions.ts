@@ -13,9 +13,8 @@ import { CurrencyValueMap,
   TransferDestination, 
   toBase58Check, 
   RESERVE_TRANSFER_DESTINATION,
-  Identity,
-  Principal,
-  DEST_PKH
+  DEST_PKH,
+  Identity
 } from "verus-typescript-primitives";
 import { BN } from "bn.js";
 import { Network } from "./networkTypes";
@@ -684,6 +683,9 @@ export const createUnfundedIdentityUpdate = (
     //TODO: iterate through outputs and add output scripts to tx. not sure if identity needs to be part of outputs param or a separate param.
     //TODO: add identity to output scripts
     //TODO: change eval codes
+
+    //TODO : 1) using passed in identity data lookup the ID on the blockchain and get an array of confirmed and unconfirmed unspentaddress tx's
+    //TODO : 2) itterate through the confirmedUTXOs
     for (const output of outputs) {
         if (!output.currency) throw new Error("Must specify currency i-address for all outputs");
         if (output.satoshis == null) throw new Error("Must specify satoshis for all outputs");
@@ -712,7 +714,7 @@ export const createUnfundedIdentityUpdate = (
 
         const destination = new TxDestination(params.address.type.toNumber(), params.address.destination_bytes)
         outMaster = new OptCCParams(3, evals.EVAL_NONE, 1, 1, [destination]);
-        outParams = new OptCCParams(3, evals.EVAL_RESERVE_OUTPUT, 1, 1, [destination]); //change eval code
+        outParams = new OptCCParams(3, evals.EVAL_IDENTITY_PRIMARY, 1, 1, [destination], [identity.toBuffer()]); //change eval code
 
         const outputScript = script.compile([
         outMaster.toChunk(),
