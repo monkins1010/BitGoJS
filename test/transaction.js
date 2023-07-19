@@ -57,9 +57,18 @@ describe('Transaction', function () {
 
     const output = btemplates.classifyOutput(script)
     assert.strictEqual(output, btemplates.types.SMART_TRANSACTION);
-    const SmartTransactionSignatures = require('../src/templates/smarttransaction/output')
-    const decoded = SmartTransactionSignatures.check(script);
-    console.log(actual)
+
+    var bscript = require('../src/script')
+    var chunks = bscript.decompile(script)
+    const OptCCParams = require('../src/optccparams')
+    const params = OptCCParams.fromChunk(chunks[2]) //chunk 2 is the ID
+    const { Identity }= require("verus-typescript-primitives")
+
+    const newIDent = new Identity();
+
+    newIDent.fromBuffer(params.vData[0])
+
+    console.log(newIDent)
   })
 
   describe('fromBuffer/fromHex', function () {
